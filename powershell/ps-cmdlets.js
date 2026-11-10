@@ -103,7 +103,13 @@
       cwd: "C:\\lab",
       stdin: (opts.stdin || []).slice()
     };
-    Object.keys(opts.files || {}).forEach(function (f) { fsWrite(sys, f, opts.files[f]); });
+    // A lab file is a string, or {content, ageDays} to give it an older LastWriteTime.
+    Object.keys(opts.files || {}).forEach(function (f) {
+      var v = opts.files[f];
+      if (v && typeof v === "object") { fsWrite(sys, f, v.content); fsGet(sys, f).mtime = NOW - (v.ageDays || 0) * 86400000; }
+      else fsWrite(sys, f, v);
+    });
+    (lib.systemHooks || []).forEach(function (h) { h(sys, opts); });
     if (opts.system) opts.system(sys);
     return sys;
   };
@@ -173,6 +179,10 @@
     var pre = n.key + "\\";
     return Object.keys(sys.files).some(function (k) { return k.indexOf(pre) === 0; });
   }
+  lib.fs = { normPath: function (s, p) { return normPath(s, p); }, write: function (s, p, c) { return fsWrite(s, p, c); }, get: function (s, p) { return fsGet(s, p); },
+    isDir: function (s, p) { return fsIsDir(s, p); }, fileObj: function (s, k) { return fileObj(s, k); }, dirObj: function (s, r) { return dirObj(s, r); },
+    readLines: function (t) { return readLines(t); }, notFound: function (c, p) { return pathNotFound(c, p); } };
+  lib.objs = { service: function (s) { return serviceObj(s); }, process: function (x) { return processObj(x); }, user: function (u) { return userObj(u); } };
   function fileObj(sys, key) {
     var f = sys.files[key];
     var rel = f.name, nm = rel.split("\\").pop();
@@ -551,7 +561,7 @@
   C("New-Object", UTIL, [p("TypeName", 0), p("Property"), p("ArgumentList", 1)], function (b, input, ctx) {
     var tn = toStr(b.typename);
     var o = lib.newObject(tn, list(b.argumentlist), ctx);
-    if (b.property instanceof PSHashtable) b.property.entries().forEach(function (e) { if (o instanceof PSObject) o.set(toStr(e.key), e.value); });
+    if (b.property instanceof PSHashtable) b.property.entries().forEach(function (e) { if (o instanceof PSObject) { o.set(toStr(e.key), e.value); if (o.onSet) o.onSet(toStr(e.key), e.value); } });
     return [o];
   }, { synopsis: "Creates an object of a .NET type, e.g. New-Object PSObject -Property @{ Name = 'x' }." });
 
@@ -939,6 +949,7 @@
         if (b.recurse) for (var d = 1; d < segs.length - 1; d++) dirs[segs.slice(0, d + 1).join("\\").toLowerCase()] = orig.slice(0, depth + d + 1).join("\\");
         if (!b.recurse) return;
       }
+      if (/(^|\\)\.keep$/.test(k)) return; // marker for empty folders
       files.push(k);
     });
     var out = [];
@@ -976,7 +987,9 @@
   alias("ni", "New-Item");
   C("Remove-Item", MGMT, [p("Path", 0), sw("Recurse"), sw("Force")], function (b, input, ctx) {
     var sys = ctx.session.system;
-    names(b.path).forEach(function (pth) {
+    // Files piped in (Get-ChildItem ... | Remove-Item) bind by their FullName.
+    var paths = input && input.length ? input.map(function (x) { return toStr(x instanceof PSObject && x.has("FullName") ? x.get("FullName") : x); }) : names(b.path);
+    paths.forEach(function (pth) {
       var n = normPath(sys, pth);
       if (ctx.whatIf) { ctx.session.write("What if: Performing the operation \"Remove File\" on target \"" + n.display + "\".", "whatif"); return; }
       if (sys.files[n.key]) delete sys.files[n.key];
@@ -1054,6 +1067,7 @@
   }, { synopsis: "Converts CSV text into objects." });
 
   function jsonOf(v, depth, max, ctx, ind, compress) {
+    if (depth > max && v !== null && typeof v === "object" && !(v instanceof PSDate)) ctx.jsonTruncated = true;
     var nl = compress ? "" : "\n", sp = compress ? "" : "  ";
     var pad = compress ? "" : sp.repeat(ind + 1), pad0 = compress ? "" : sp.repeat(ind);
     if (v === null || v === undefined) return "null";
@@ -1076,7 +1090,10 @@
     var v = b.asarray || items.length > 1 ? items : items[0];
     if (input === null && b.inputobject !== undefined) v = b.inputobject;
     var depth = b.depth !== undefined ? toNumber(b.depth) : 2;
-    return [jsonOf(v, 0, depth, ctx, 0, !!b.compress)];
+    ctx.jsonTruncated = false;
+    var text = jsonOf(v, 0, depth, ctx, 0, !!b.compress);
+    if (ctx.jsonTruncated) ctx.session.write("WARNING: Resulting JSON is truncated as serialization has exceeded the set depth of " + depth + ".", "warn");
+    return [text];
   }, { synopsis: "Converts objects to JSON text. Nested objects deeper than -Depth (default 2) become strings!", examples: ["$obj | ConvertTo-Json -Depth 5"] });
   function fromJson(x, asHash) {
     if (x === null) return null;

@@ -1,0 +1,59 @@
+/* Simulated Windows windows (ps-gui-view.js): deliberately light, Windows 11-ish, so they read as "a desktop app". */
+.psgui-layer { position: fixed; inset: 0; z-index: 60; background: rgba(4, 7, 10, 0.55); overflow: auto; }
+.psgui-center { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding: 48px 12px 24px; pointer-events: none; }
+.psgui-center > * { pointer-events: auto; }
+.psgui-center.under { filter: brightness(0.82); }
+.psgui-center.under * { pointer-events: none !important; }
+.psgui-center.modal { align-items: center; background: rgba(0, 0, 0, 0.18); }
+.psgui-win { background: #f3f3f3; color: #1b1b1b; border: 1px solid #9a9a9a; border-radius: 8px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  font: 13px/1.35 "Segoe UI", system-ui, -apple-system, sans-serif; min-width: 220px; max-width: calc(100vw - 24px); overflow: hidden; }
+.psgui-title { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 0 0 10px; background: #fff; border-bottom: 1px solid #e3e3e3; user-select: none; }
+.psgui-icon { color: #2563eb; font-size: 12px; }
+.psgui-ttext { flex: 1; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psgui-sim { font: 600 9.5px var(--font-mono, monospace); text-transform: uppercase; letter-spacing: 0.06em; color: #8b8b8b; margin-right: 4px; }
+.psgui-x { width: 44px; height: 32px; border: 0; background: transparent; color: #333; font-size: 13px; cursor: pointer; }
+.psgui-x:hover { background: #c42b1c; color: #fff; }
+.psgui-body { position: relative; padding: 0; overflow: auto; max-width: 100%; }
+.psgui-body.wpf { padding: 12px; }
+.psgui-modal .psgui-body { padding: 16px; }
+.psgui-body .abs { position: absolute; box-sizing: border-box; }
+.psgui-label { color: #1b1b1b; padding-top: 3px; overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.psgui-input { box-sizing: border-box; border: 1px solid #8a8a8a; border-bottom-color: #555; border-radius: 4px; background: #fff; color: #111; font: inherit; padding: 2px 6px; width: 100%; }
+.psgui-input:focus { outline: 2px solid #2563eb; outline-offset: -1px; }
+textarea.psgui-input { resize: none; }
+.psgui-btn { box-sizing: border-box; border: 1px solid #c4c4c4; border-radius: 4px; background: #fdfdfd; color: #111; font: inherit; padding: 2px 10px; cursor: pointer; min-height: 23px; }
+.psgui-btn:hover { background: #f0f0f0; border-color: #9a9a9a; }
+.psgui-btn.primary { background: #2563eb; border-color: #1d4ed8; color: #fff; }
+.psgui-btn.primary:hover { background: #1d4ed8; }
+.psgui-btn:disabled, .disabled { opacity: 0.55; cursor: default; }
+.psgui-check { display: flex; align-items: center; gap: 4px; color: #1b1b1b; cursor: pointer; }
+.psgui-select { box-sizing: border-box; border: 1px solid #8a8a8a; border-radius: 4px; background: #fff; color: #111; font: inherit; width: 100%; }
+.psgui-group { border: 1px solid #c8c8c8; border-radius: 4px; }
+.psgui-legend { position: absolute; top: -9px; left: 8px; background: #f3f3f3; padding: 0 4px; font-size: 12px; color: #333; }
+.wpf .psgui-legend { position: static; background: none; padding: 0 0 4px; }
+.psgui-gridwrap { overflow: auto; background: #fff; border: 1px solid #a0a0a0; max-height: 320px; }
+.psgui-grid { border-collapse: collapse; width: 100%; font-size: 12.5px; color: #111; }
+.psgui-grid th { position: sticky; top: 0; background: #f0f0f0; border-bottom: 1px solid #c8c8c8; border-right: 1px solid #e0e0e0; text-align: left; font-weight: 600; padding: 3px 8px; white-space: nowrap; }
+.psgui-grid td { border-bottom: 1px solid #ececec; padding: 3px 8px; white-space: nowrap; }
+.psgui-grid tr:not(:first-child) { cursor: pointer; }
+.psgui-grid tr:not(:first-child):hover td { background: #eef3ff; }
+.psgui-grid tr.sel td { background: #cfe0ff; }
+.psgui-msg { display: flex; gap: 14px; align-items: flex-start; padding: 6px 4px 16px; }
+.psgui-msgicon { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; background: #2563eb; }
+.psgui-msgicon.warning, .psgui-msgicon.exclamation { background: #d97706; border-radius: 4px; }
+.psgui-msgicon.error, .psgui-msgicon.stop, .psgui-msgicon.hand { background: #c42b1c; }
+.psgui-msgtext { white-space: pre-wrap; padding-top: 5px; color: #1b1b1b; }
+.psgui-btnrow { display: flex; justify-content: flex-end; gap: 8px; margin: 12px -16px -16px; padding: 12px 16px; background: #ebebeb; border-top: 1px solid #ddd; }
+.psgui-btnrow .psgui-btn { min-width: 76px; }
+.psgui-hint { font-size: 12px; color: #555; margin: 6px 0; display: block; }
+.psgui-filter { margin-bottom: 8px; }
+.psgui-files { background: #fff; border: 1px solid #a0a0a0; max-height: 200px; overflow: auto; margin-bottom: 6px; }
+.psgui-file { padding: 4px 8px; cursor: pointer; font-family: var(--font-mono, monospace); font-size: 12px; color: #111; }
+.psgui-file:hover { background: #eef3ff; }
+.psgui-file.sel { background: #cfe0ff; }
+.wpf-panel { display: flex; gap: 8px; }
+.wpf-panel.col { flex-direction: column; align-items: stretch; }
+.wpf-panel.row { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.wpf-text { color: #1b1b1b; white-space: pre-wrap; }
+.wpf .psgui-btn { align-self: flex-start; }
+.psgui-progress { width: 100%; }

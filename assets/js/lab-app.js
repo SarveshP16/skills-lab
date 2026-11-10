@@ -573,6 +573,8 @@
           errLine = res.error.line - 1;
           editor.addLineClass(errLine, "background", "cm-errline");
         }
+      } else if (res.pause) {
+        print("… waiting for the window", "sys");
       } else if (!res.out && !(res.parts && res.parts.length)) {
         print("(no output)", "sys");
       }
@@ -667,7 +669,12 @@
     saveXP(lab);
     renderSide();
     renderTasks();
-    setTimeout(function () { openModal(true); }, 350);
+    setTimeout(function () {
+      // A script that opened a window (PowerShell GUI labs) is still running: celebrate once it closes.
+      var gv = window.PSGuiView;
+      if (gv && gv.isOpen()) gv.whenClosed(function () { openModal(true); });
+      else openModal(true);
+    }, 350);
   }
 
   function nextLab() {

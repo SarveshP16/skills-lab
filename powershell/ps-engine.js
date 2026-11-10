@@ -131,6 +131,11 @@
   };
   // Statements until a closing char (or end of input).
   P.statements = function (close) {
+    var prevNC = this.noComma;
+    this.noComma = false; // commas mean arrays again inside nested blocks, even within method arguments
+    try { return this.statementsInner(close); } finally { this.noComma = prevNC; }
+  };
+  P.statementsInner = function (close) {
     var out = [];
     for (;;) {
       this.ws(true);
@@ -833,6 +838,11 @@
     this.err("Unexpected token '" + c + "' in expression.", start);
   };
   P.pipelineOrStatementInParens = function () {
+    var prevNC = this.noComma;
+    this.noComma = false;
+    try { return this.parensInner(); } finally { this.noComma = prevNC; }
+  };
+  P.parensInner = function () {
     var w = lc(this.word());
     if (w && KEYWORDS[w] && this.kw(w)) { var st = this.keywordStatement(w, this.line()); if (st) return { t: "stmtexpr", st: st }; }
     var first = this.pipelineElement();
@@ -945,6 +955,11 @@
     return node;
   };
   P.hashLiteral = function () {
+    var prevNC = this.noComma;
+    this.noComma = false;
+    try { return this.hashInner(); } finally { this.noComma = prevNC; }
+  };
+  P.hashInner = function () {
     var entries = [];
     for (;;) {
       this.ws(2);
@@ -1000,7 +1015,10 @@
   function backtick(c) {
     return { n: "\n", t: "\t", r: "\r", "0": "\0", a: "\x07", b: "\b", e: "\x1b", f: "\f", v: "\v" }[c] || c;
   }
-  function isLValue(e) { return e.t === "var" || e.t === "member" || e.t === "index" || (e.t === "cast" && e.e.t === "var"); }
+  function isLValue(e) {
+    if (e.t === "array" && !e.unaryComma) return e.items.every(function (x) { return x.t === "var" || x.t === "member" || x.t === "index"; });
+    return e.t === "var" || e.t === "member" || e.t === "index" || (e.t === "cast" && e.e.t === "var");
+  }
   function parseNumber(w) {
     var m = /^(-?)(0x[0-9a-fA-F]+|[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(kb|mb|gb|tb)?$/i.exec(w);
     if (!m) return null;
@@ -1385,7 +1403,7 @@
       } catch (e) {
         if (e instanceof PSError) {
           if (!e.line) e.line = st.line;
-          if (ctx.inTry || e.scriptTerminating) throw e;
+          if (ctx.inTry || e.scriptTerminating || e.stopAction) throw e;
           ctx.session.writeError(e, ctx); // statement-terminating: report, then carry on with the next statement
           continue;
         }
@@ -1491,7 +1509,7 @@
     try {
       execBlock(st.body, inner, out);
     } catch (e) {
-      if (!(e instanceof PSError)) { if (st.fin) execBlock(st.fin, ctx, out); throw e; }
+      if (!(e instanceof PSError)) { if (st.fin && !(e && e.isPause)) execBlock(st.fin, ctx, out); throw e; }
       var handled = false;
       for (var k = 0; k < st.catches.length; k++) {
         var c = st.catches[k];
@@ -1622,6 +1640,14 @@
     var value;
     if (st.value.t === "pipeline" && st.value.elems.length === 1 && st.value.elems[0].t !== "cmd") value = evalExpr(st.value.elems[0], ctx);
     else value = condValue(st.value, ctx);
+    if (target.t === "array") { // $a, $b = 1, 2, 3  ->  $a = 1; $b = @(2, 3)
+      var vals = enumerate(value), tg = target.items;
+      for (var ti = 0; ti < tg.length; ti++) {
+        var v2 = ti < tg.length - 1 ? (ti < vals.length ? vals[ti] : null) : (vals.length - ti > 1 ? vals.slice(ti) : (ti < vals.length ? vals[ti] : null));
+        assignTo(tg[ti], v2, ctx);
+      }
+      return;
+    }
     if (target.t === "cast") {
       value = convertTo(value, target.type, ctx);
       setVar(target.e, value, ctx);
@@ -1643,8 +1669,10 @@
       var name = typeof target.name === "string" ? target.name : toStr(evalExpr(target.name, ctx));
       if (o instanceof PSHashtable) { o.set(name, value); return; }
       if (o instanceof PSObject) {
-        if (!o.has(name)) throw new PSError("The property '" + name + "' cannot be found on this object. Verify that the property exists and can be set.", { category: "InvalidOperation" });
+        // GUI controls have many more properties than the lab models; accept and store unknown ones.
+        if (!o.has(name) && !o.guiId) throw new PSError("The property '" + name + "' cannot be found on this object. Verify that the property exists and can be set.", { category: "InvalidOperation" });
         o.set(name, value);
+        if (o.onSet) o.onSet(name, value);
         return;
       }
       if (o === null || o === undefined) throw new PSError("The property '" + name + "' cannot be found on this object. Verify that the property exists and can be set.", { category: "InvalidOperation" });
@@ -1861,8 +1889,21 @@
         return Array.isArray(l) ? l.map(doRep) : doRep(l);
       }
       case "split": {
-        var srx = netRegex(toStr(Array.isArray(r) ? r[0] : r), cs ? "" : "i");
-        var doSplit = function (x) { return toStr(x).split(srx).filter(function (s) { return s !== undefined; }); };
+        var srx = netRegex(toStr(Array.isArray(r) ? r[0] : r), "g" + (cs ? "" : "i"));
+        var limit = Array.isArray(r) && r.length > 1 ? toNumber(r[1]) : 0;
+        var doSplit = function (x) {
+          var str = toStr(x), parts = [], last = 0, m;
+          srx.lastIndex = 0;
+          while ((m = srx.exec(str)) !== null) {
+            if (limit > 0 && parts.length >= limit - 1) break;
+            if (m[0] === "" ) { srx.lastIndex++; if (m.index >= str.length) break; continue; }
+            parts.push(str.slice(last, m.index));
+            for (var g = 1; g < m.length; g++) if (m[g] !== undefined) parts.push(m[g]);
+            last = m.index + m[0].length;
+          }
+          parts.push(str.slice(last));
+          return parts;
+        };
         if (Array.isArray(l)) return l.reduce(function (acc, x) { return acc.concat(doSplit(x)); }, []);
         return doSplit(l);
       }
@@ -2636,7 +2677,7 @@
       throw e;
     }
     var ctx = new Ctx(session, session.scriptScope);
-    var exitCode = 0, error = null;
+    var exitCode = 0, error = null, paused = null;
     try {
       var stmts = ast.stmts;
       for (var k = 0; k < stmts.length; k++) {
@@ -2659,10 +2700,12 @@
         }
         out.flush();
         session.activeSink = null;
+        session.stmtIndex = k + 1;
       }
     } catch (e) {
       if (e instanceof ExitSignal) exitCode = e.code;
       else if (e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ReturnSignal) { /* top level: just stop */ }
+      else if (e && e.isPause) { paused = e.request; }
       else if (e instanceof StepLimit) {
         error = { message: "Your script ran for over " + session.maxSteps.toLocaleString("en-US") + " steps without finishing, so it was stopped. This is usually an infinite loop: a loop whose condition never becomes $false.", line: ctx.line, category: "StepLimit" };
         session.write(error.message, "err");
@@ -2681,7 +2724,7 @@
       }
     }
     if (session.pendingHost) { session.write(session.pendingHost); session.pendingHost = ""; }
-    return { error: error, exit: exitCode };
+    return { error: error, exit: exitCode, pause: paused };
   }
   function flushOutput(session, items, opts) {
     if (!items.length) return;
@@ -2718,6 +2761,8 @@
   function shapeKey(o) {
     if (o instanceof PSHashtable) return "#hash";
     if (!(o instanceof PSObject)) return null;
+    var sl = root.PSEngine.lib.stringTypes;
+    if (sl && sl[o.typeName]) return null; // shown as text, like Select-String's file:line:text
     return o.typeName + "|" + (displayProps(o) ? "view" : o.names().join(","));
   }
   function formatItems(items, session, forceKind) {

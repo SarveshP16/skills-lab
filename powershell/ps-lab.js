@@ -75,6 +75,7 @@
   /* ---------------- running */
   function freshSession(opts) {
     var s = E.newSession({ files: opts.files || {}, stdin: (opts.stdin || []).slice(), env: opts.env || {}, system: opts.system });
+    s.interactionList = (opts.interactions || []).slice();
     if (opts.prelude) {
       E.runScript(s, opts.prelude);
       s.parts = []; s.errors = [];
@@ -105,6 +106,14 @@
       errors: s.errors.map(function (e) { return e.message; }),
       error: run.res.error,
       exit: run.res.exit,
+      pause: run.res.pause || null,
+      interactions: (opts.interactions || []).slice(),
+      gui: s.gui || { forms: [], controls: {}, messages: [], grids: [] },
+      // Re-run with GUI interactions (clicks, typing, answers): r.interact([G.text(box, "x"), G.click(button)])
+      interact: function (list) {
+        var opts2 = Object.assign({}, opts, { interactions: list });
+        return makeCtx(code, opts2, runCode(code, opts2));
+      },
       v: function (name) { var x = s.scriptScope.lookup(name); return x ? x.value : undefined; },
       p: function (name) { return plain(r.v(name)); },
       has: function (name) { return !!s.scriptScope.lookup(name); },
@@ -146,12 +155,20 @@
   function handle(msg) {
     var opts = { files: msg.files || {}, prelude: msg.prelude || "", stdin: msg.stdin || [], env: msg.env || {} };
     if (msg.type === "repl") {
-      if (!last || lastOpts.prelude !== opts.prelude) { last = freshSession(opts); lastOpts = opts; }
+      if (!last || lastOpts.prelude !== opts.prelude || lastOpts.files !== opts.files) { last = freshSession(opts); lastOpts = opts; }
       var before = last.parts.length;
-      var res = E.evalIn(last, msg.code);
+      var res;
+      try { res = E.evalIn(last, msg.code); }
+      catch (e) {
+        if (!(e && e.isPause)) throw e;
+        // A window was opened from the console: run the snippet on its own, so it can be replayed.
+        var solo = runCode(msg.code, opts);
+        return { parts: solo.session.parts, pause: solo.res.pause, replay: { code: msg.code, opts: opts } };
+      }
       var parts = last.parts.slice(before);
       return { parts: parts, error: res.errors.length ? errorInfo({ message: res.errors[0] }, null) : null };
     }
+    if (msg.interactions) opts.interactions = msg.interactions;
     var run;
     try { run = runCode(msg.code, opts); }
     catch (e) { return { internal: "the PowerShell simulator crashed: " + (e && e.stack || e) }; }
@@ -164,7 +181,10 @@
       parts: parts,
       error: first ? errorInfo(first, first.line) : null,
       exit: { code: run.res.exit, exited: false },
-      results: results
+      results: results,
+      pause: run.res.pause || null,
+      session: run.session,
+      replay: { code: msg.code, opts: opts }
     };
   }
   function errorInfo(e, line) { return { text: e.message, type: e.category || "RuntimeException", line: line || e.line || null, message: e.message }; }
@@ -198,8 +218,41 @@
       hooks.enableRun();
     },
     call: function (msg) {
-      return new Promise(function (res) { setTimeout(function () { res(handle(msg)); }, 0); });
+      return new Promise(function (res) {
+        setTimeout(function () {
+          var out = handle(msg);
+          res(out);
+          // A paused script is waiting for a window: show it once the console has printed the run.
+          if (out.pause && root.PSGuiView) setTimeout(function () { root.PSGuiView.open(out); }, 0);
+        }, 0);
+      });
     }
+  };
+
+  /* ---------------- GUI helpers for checks (H.gui) */
+  var G = {
+    // find a control: G.find(r, "Button", "Look up") matches by kind and Text/Content/Name; or by a test function
+    find: function (r, kind, text) {
+      var ctls = r.gui && r.gui.controls ? Object.keys(r.gui.controls).map(function (k) { return r.gui.controls[k]; }) : [];
+      return ctls.filter(function (c) {
+        if (kind && c.guiKind !== kind) return false;
+        if (text === undefined || text === null) return true;
+        if (typeof text === "function") return text(c);
+        var t = [c.get("Text"), c.get("Content"), c.get("Name"), c.get("Title")].map(function (x) { return x === undefined || x === null ? "" : E.toStr(x); });
+        return t.some(function (x) { return x.toLowerCase() === String(text).toLowerCase(); });
+      })[0] || null;
+    },
+    all: function (r, kind) { return Object.keys(r.gui.controls || {}).map(function (k) { return r.gui.controls[k]; }).filter(function (c) { return !kind || c.guiKind === kind; }); },
+    click: function (c) { return { t: "event", id: c.guiId, action: "click" }; },
+    text: function (c, v) { return { t: "event", id: c.guiId, action: "text", value: v }; },
+    check: function (c, v) { return { t: "event", id: c.guiId, action: "check", value: v !== false }; },
+    select: function (c, i) { return { t: "event", id: c.guiId, action: "select", value: i }; },
+    close: function (result) { return { t: "close", result: result }; },
+    answer: function (v) { return { t: "answer", value: v }; },
+    form: function (r) { return r.gui && r.gui.forms ? r.gui.forms[0] || null : null; },
+    prop: function (c, name) { return c ? H.plain(c.get(name)) : undefined; },
+    controlsOf: function (form) { var out = []; (function walk(l) { E.enumerate(l).forEach(function (c) { if (c && c.get) { out.push(c); if (c.has("Controls")) walk(c.get("Controls")); if (c.wpfChildren) walk(c.wpfChildren); } }); })(form.has("Controls") ? form.get("Controls") : form.wpfChildren || []); return out; },
+    lastMessage: function (r) { var m = r.gui.messages || []; return m[m.length - 1] || null; }
   };
 
   /* ---------------- check helpers (H) */
@@ -244,7 +297,8 @@
       if (!same(res.value, want)) return code + " should return " + show(want) + ", but returned " + show(res.raw) + ".";
       return true;
     },
-    fnExists: function (r, name) { return r.fn(name) ? true : "I can't find a function called " + name + ". Define it with: function " + name + " { ... }"; }
+    fnExists: function (r, name) { return r.fn(name) ? true : "I can't find a function called " + name + ". Define it with: function " + name + " { ... }"; },
+    gui: G
   };
 
   root.PSLab = { runner: runner, handle: handle, runCode: runCode, makeCtx: makeCtx, runChecks: runChecks, H: H, explain: EXPLAIN, explainFn: explainFn, plain: plain, show: show, same: same };
