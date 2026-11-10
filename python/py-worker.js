@@ -277,8 +277,41 @@ var ready = (async function () {
 });
 
 function writeFiles(files, remove) {
-  Object.keys(files || {}).forEach(function (p) { py.FS.writeFile(p, files[p]); });
+  Object.keys(files || {}).forEach(function (p) {
+    var dir = p.split("/").slice(0, -1).join("/");
+    // mkdirTree treats a relative path as starting at "/", so anchor it to the current folder.
+    if (dir) py.FS.mkdirTree(dir.charAt(0) === "/" ? dir : py.FS.cwd() + "/" + dir);
+    py.FS.writeFile(p, files[p]);
+  });
   (remove || []).forEach(function (p) { try { py.FS.unlink(p); } catch (_) { /* not there */ } });
+}
+
+/* Extra Pyodide packages, loaded the first time code imports them (import name -> package name). */
+var PACKAGES = { yaml: "pyyaml" };
+var loaded = {};
+
+function importedModules(code) {
+  var mods = [];
+  String(code || "").split("\n").forEach(function (line) {
+    var m = line.match(/^\s*import\s+([\w.,\s]+)/);
+    if (m) m[1].split(",").forEach(function (part) { mods.push(part.trim().split(/[\s.]/)[0]); });
+    m = line.match(/^\s*from\s+(\w+)/);
+    if (m) mods.push(m[1]);
+  });
+  return mods;
+}
+
+async function ensurePackages(code, id) {
+  var need = [];
+  importedModules(code).forEach(function (mod) {
+    var pkg = PACKAGES[mod];
+    if (pkg && !loaded[pkg] && need.indexOf(pkg) < 0) need.push(pkg);
+  });
+  if (!need.length) return;
+  postMessage({ type: "loading", id: id, text: "Downloading " + need.join(", ") + " (first time only)…" });
+  await py.loadPackage(need, { messageCallback: function () {} });
+  need.forEach(function (p) { loaded[p] = true; });
+  postMessage({ type: "loaded", id: id });
 }
 
 onmessage = async function (e) {
@@ -287,12 +320,15 @@ onmessage = async function (e) {
     await ready;
     if (!py) throw new Error("Python failed to load");
     if (msg.type === "run") {
+      await ensurePackages(msg.code + "\n" + (msg.prelude || "") + "\n" +
+        (msg.checks || []).map(function (c) { return c.code; }).join("\n"), msg.id);
       writeFiles(msg.files, msg.removeFiles);
       var fn = py.globals.get("_sl_run");
       var res = fn(msg.code, msg.prelude || "", JSON.stringify(msg.stdin || []), JSON.stringify(msg.checks || []));
       fn.destroy();
       postMessage({ type: "result", id: msg.id, data: JSON.parse(res) });
     } else if (msg.type === "repl") {
+      await ensurePackages(msg.code, msg.id);
       writeFiles(msg.files, msg.removeFiles);
       var r = py.globals.get("_sl_repl");
       var out = r(msg.code);
@@ -300,6 +336,7 @@ onmessage = async function (e) {
       postMessage({ type: "result", id: msg.id, data: JSON.parse(out) });
     }
   } catch (err) {
-    postMessage({ type: "result", id: msg.id, data: { internal: String(err && err.message || err) } });
+    var text = err && (err.message || (err.errno != null && "file system error " + err.errno)) || String(err);
+    postMessage({ type: "result", id: msg.id, data: { internal: text } });
   }
 };

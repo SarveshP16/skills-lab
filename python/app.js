@@ -34,6 +34,7 @@
         var m = e.data;
         if (m.type === "ready") {
           self.ready = true;
+          self.version = m.python;
           setStatus("ok", "Python " + m.python + " ready");
           $("runBtn").disabled = false;
           self._res(m);
@@ -43,6 +44,16 @@
         } else if (m.type === "result") {
           var p = self.pending[m.id];
           if (p) { delete self.pending[m.id]; clearTimeout(p.timer); p.res(m.data); }
+        } else if (m.type === "loading") {
+          // A package download isn't the learner's code running, so pause the timeout meanwhile.
+          var pl = self.pending[m.id];
+          if (pl) clearTimeout(pl.timer);
+          setStatus("busy", m.text);
+          print("⬇ " + m.text, "sys");
+        } else if (m.type === "loaded") {
+          var pd = self.pending[m.id];
+          if (pd) pd.timer = setTimeout(pd.fire, pd.timeout);
+          setStatus("ok", "Python " + self.version + " ready");
         }
       };
       this.worker.onerror = function () {
@@ -56,15 +67,16 @@
         return new Promise(function (res) {
           var id = ++self.seq;
           msg.id = id;
-          var timer = setTimeout(function () {
+          var fire = function () {
             delete self.pending[id];
             self.worker.terminate();
             setStatus("busy", "Restarting Python…");
             $("runBtn").disabled = true;
             self.start();
             res({ timeout: true });
-          }, timeout || RUN_TIMEOUT);
-          self.pending[id] = { res: res, timer: timer };
+          };
+          var ms = timeout || RUN_TIMEOUT;
+          self.pending[id] = { res: res, fire: fire, timeout: ms, timer: setTimeout(fire, ms) };
           self.worker.postMessage(msg);
         });
       }, function (err) { return { internal: "Python isn't available: " + err }; });

@@ -8,7 +8,7 @@ Hands-on labs for learning Python, PowerShell, Linux, Git & GitHub, Networking, 
 
 | # | Track | Status |
 |---|-------|--------|
-| 1 | Python | Module 1 open: 9 labs, a capstone project and 27 practice drills (34 labs planned) |
+| 1 | Python | Modules 1–2 open: 15 labs, 2 capstone projects and 45 practice drills (35 labs planned) |
 | 2 | PowerShell | planned |
 | 3 | Linux | planned |
 | 4 | Git & GitHub | planned |
@@ -36,6 +36,6 @@ Then open http://localhost:8770/. Opening the HTML files straight from disk won'
 index.html            home page: track picker, rank and XP
 assets/css/base.css   shared colours, fonts and buttons
 assets/js/progress.js shared progress store and track catalogue
-python/               Python track (page, UI, Pyodide worker, lab content)
+python/               Python track (page, UI, Pyodide worker, lab content per module)
 prototype/night-shift the earlier Linux/Networking/DevOps prototype, to be reused by later tracks
 ```
