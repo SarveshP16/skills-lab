@@ -1,10 +1,20 @@
-/* sudo learn — Python track UI: editor, console, tasks, drills, capstones, XP and completion. */
+/* sudo learn — lab page UI shared by every track: editor, console, tasks, drills, capstones, XP and completion.
+   A track page can set window.LAB_CONFIG before loading this file; without it, the Python defaults apply
+   (Pyodide runner in py-worker.js). LAB_CONFIG: { track, data, mode, runMode, file, drillFile, cmd, lang,
+   runner: {start(hooks), ready, call(msg, timeout) -> Promise(result)}, explain: {type: text}, explainFn(err), isCode: RegExp } */
 (function () {
   "use strict";
 
-  var TRACK = "python";
-  var T = window.PY_TRACK;
+  var CFG = window.LAB_CONFIG || {};
+  var TRACK = CFG.track || "python";
+  var T = CFG.data || window.PY_TRACK;
   var LABS = T.LABS;
+  var MODE = CFG.mode || { name: "python", version: 3 };
+  var RUN_MODE = CFG.runMode || "python";
+  var FILE = CFG.file || "main.py";
+  var DRILL_FILE = CFG.drillFile || "drill.py";
+  var CMD = CFG.cmd || "python";
+  var LANG = CFG.lang || "Python";
   var RUN_TIMEOUT = 8000;
   var HINT_COST = 10;
   var QUIZ_XP = 10;
@@ -14,8 +24,8 @@
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function labById(id) { for (var i = 0; i < LABS.length; i++) if (LABS[i].id === id) return LABS[i]; return null; }
 
-  /* ---------------------------------------------------------------- Python runner */
-  var runner = {
+  /* ---------------------------------------------------------------- Python runner (default) */
+  var runner = CFG.runner || {
     start: function () {
       var self = this;
       this.ready = false;
@@ -127,7 +137,7 @@
 
   /* ---------------------------------------------------------------- Editor */
   var editor = CodeMirror.fromTextArea($("code"), {
-    mode: { name: "python", version: 3 },
+    mode: MODE,
     lineNumbers: true,
     indentUnit: 4,
     tabSize: 4,
@@ -164,7 +174,7 @@
   function highlight(root) {
     Array.prototype.forEach.call(root.querySelectorAll("pre[data-hl]"), function (pre) {
       pre.classList.add("cm-s-default");
-      CodeMirror.runMode(pre.textContent, "python", pre);
+      CodeMirror.runMode(pre.textContent, RUN_MODE, pre);
       pre.removeAttribute("data-hl");
     });
   }
@@ -209,10 +219,14 @@
     AssertionError: "An assert statement was False. In a test, that means the code under test didn't do what the test expected.",
     UnicodeDecodeError: "These bytes aren't text. Open the file in binary mode (\"rb\") if you only need its bytes, e.g. to hash it."
   };
+  Object.keys(CFG.explain || {}).forEach(function (k) { EXPLAIN[k] = CFG.explain[k]; });
+  function explainError(err) {
+    var ex = (CFG.explainFn && CFG.explainFn(err)) || EXPLAIN[err.type];
+    if (ex) print("What this means: " + ex, "explain");
+  }
   function printError(err) {
     print(err.text, "err");
-    var ex = EXPLAIN[err.type];
-    if (ex) print("What this means: " + ex, "explain");
+    explainError(err);
   }
   $("clearBtn").addEventListener("click", function () { out.innerHTML = ""; });
 
@@ -258,7 +272,7 @@
     Array.prototype.forEach.call(el.querySelectorAll("pre.ex"), function (pre) {
       var code = pre.textContent;
       pre.classList.add("cm-s-default");
-      CodeMirror.runMode(code, "python", pre);
+      CodeMirror.runMode(code, RUN_MODE, pre);
       var b = document.createElement("button");
       b.className = "try";
       b.type = "button";
@@ -271,7 +285,7 @@
   }
 
   /* ---------------------------------------------------------------- Tasks tab */
-  function isCode(h) { return /\n/.test(h) || /^(def |for |if |elif |else|while |print\(|[\w\[\], ]+ ?[+\-]?= )/.test(h); }
+  function isCode(h) { return /\n/.test(h) || (CFG.isCode || /^(def |for |if |elif |else|while |print\(|[\w\[\], ]+ ?[+\-]?= )/).test(h); }
 
   function renderTasks() {
     if (state.drill) return renderDrill();
@@ -423,9 +437,9 @@
     state.drillResult = null;
     var saved = SL.getCode(TRACK, codeKey());
     setEditor(saved != null ? saved : d.starter + "\n");
-    $("fname").textContent = "drill.py";
+    $("fname").textContent = DRILL_FILE;
     $("stdinBox").hidden = true;
-    setProcessBoxes(d, "drill.py");
+    setProcessBoxes(d, DRILL_FILE);
     out.innerHTML = "";
     print("# Drill: " + d.title + ". Write your code above, then press Run.", "sys");
     renderTasks();
@@ -438,9 +452,9 @@
     var lab = state.lab;
     var saved = SL.getCode(TRACK, lab.id);
     setEditor(saved != null ? saved : lab.starter + "\n");
-    $("fname").textContent = "main.py";
+    $("fname").textContent = FILE;
     $("stdinBox").hidden = lab.stdin == null;
-    setProcessBoxes(lab, "main.py");
+    setProcessBoxes(lab, FILE);
     out.innerHTML = "";
     print("# Back to " + lab.ticket + ". Press Run to re-check your tasks.", "sys");
     renderTasks();
@@ -461,7 +475,7 @@
     $("tFrom").textContent = lab.from;
     $("tStory").innerHTML = lab.story;
     $("tabLearn").firstChild.textContent = lab.capstone ? "1 · Brief" : "1 · Learn";
-    $("fname").textContent = "main.py";
+    $("fname").textContent = FILE;
     renderLearn(lab);
     renderTasks();
     renderSide();
@@ -469,9 +483,9 @@
     setEditor(saved != null ? saved : lab.starter + "\n");
     $("stdinBox").hidden = lab.stdin == null;
     $("stdin").value = lab.stdin || "";
-    setProcessBoxes(lab, "main.py");
+    setProcessBoxes(lab, FILE);
     out.innerHTML = "";
-    print("# " + lab.ticket + " · " + lab.title + ". Write your code above, then press Run.", "sys");
+    print("# " + lab.ticket + " · " + lab.title + (/[.?!]$/.test(lab.title) ? "" : ".") + " Write your code above, then press Run.", "sys");
     showTab(p.started || p.done ? "tasks" : "learn");
     $("brief").scrollTop = 0;
     closeModal();
@@ -526,9 +540,9 @@
     $("runBtn").disabled = true;
     clearErrLine();
     var src = d || lab;
-    var script = d ? "drill.py" : "main.py";
+    var script = d ? DRILL_FILE : FILE;
     var argv = src.argv != null ? $("args").value.trim() : "";
-    print("▶ python " + script + (argv ? " " + argv : ""), "run-sep");
+    print("▶ " + CMD + " " + script + (argv ? " " + argv : ""), "run-sep");
     var msg = {
       type: "run",
       code: code,
@@ -546,19 +560,20 @@
       state.running = false;
       if (res.timeout) {
         print("⏱ Your code ran for " + RUN_TIMEOUT / 1000 + " seconds without finishing, so it was stopped. " +
-          "This is usually an infinite loop: a while loop whose condition never becomes False.", "err");
+          "This is usually an infinite loop: a loop whose condition never becomes false.", "err");
         return;
       }
       $("runBtn").disabled = false;
       if (res.internal) { print("Internal error: " + res.internal, "err"); return; }
-      if (res.out) print(res.out.replace(/\n$/, ""));
+      if (res.parts) res.parts.forEach(function (pt) { print(pt.text, pt.cls); });
+      else if (res.out) print(res.out.replace(/\n$/, ""));
       if (res.error) {
-        printError(res.error);
-        if (res.error.line) {
+        if (res.parts) explainError(res.error); else printError(res.error);
+        if (res.error.line && res.error.line <= editor.lineCount()) {
           errLine = res.error.line - 1;
           editor.addLineClass(errLine, "background", "cm-errline");
         }
-      } else if (!res.out) {
+      } else if (!res.out && !(res.parts && res.parts.length)) {
         print("(no output)", "sys");
       }
       // Command-line labs care about the exit code, as a CI system would. Elsewhere, only show it after sys.exit().
@@ -616,13 +631,14 @@
       if (i === 0) print(l, "in");
       else print("... " + l, "sys");
     });
-    if (!runner.ready) { print("Python is still loading. Try again in a moment.", "sys"); return; }
+    if (!runner.ready) { print(LANG + " is still loading. Try again in a moment.", "sys"); return; }
     var src = state.drill || state.lab;
     runner.call({ type: "repl", code: code, prelude: src.prelude || "", packages: src.packages || [], files: src.files || {}, removeFiles: src.removeFiles || [] }, RUN_TIMEOUT).then(function (res) {
       if (res.timeout) { print("⏱ Stopped after " + RUN_TIMEOUT / 1000 + " seconds (infinite loop?).", "err"); return; }
       if (res.internal) { print("Internal error: " + res.internal, "err"); return; }
-      if (res.out) print(res.out.replace(/\n$/, ""));
-      if (res.error) printError(res.error);
+      if (res.parts) res.parts.forEach(function (pt) { print(pt.text, pt.cls); });
+      else if (res.out) print(res.out.replace(/\n$/, ""));
+      if (res.error) { if (res.parts) explainError(res.error); else printError(res.error); }
     });
   }
   $("replForm").addEventListener("submit", function (e) {
@@ -754,6 +770,10 @@
   /* ---------------------------------------------------------------- Boot */
   renderXP();
   route();
-  runner.start();
+  runner.start({
+    setStatus: setStatus,
+    print: print,
+    enableRun: function () { $("runBtn").disabled = false; }
+  });
   window.addEventListener("resize", function () { editor.refresh(); });
 })();
