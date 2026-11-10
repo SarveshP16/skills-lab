@@ -907,8 +907,7 @@
       }
     ],
     debrief: "<p>Ticket closed. Bad ports are rejected loudly where they come in, the script counts them and carries on, and a missing config file no longer crashes anything.</p>" +
-      "<p><b>Security principle, \"fail safely\":</b> validate input at the edge, raise clear errors, and handle only the errors you expect. A bare <code>except:</code> that swallows everything can hide attacks and bugs alike.</p>" +
-      "<p><b>Module 1 complete!</b> Module 2 (files, regex, JSON and CSV) is coming next.</p>",
+      "<p><b>Security principle, \"fail safely\":</b> validate input at the edge, raise clear errors, and handle only the errors you expect. A bare <code>except:</code> that swallows everything can hide attacks and bugs alike.</p>",
     realworld: "Real scripts also <em>log</em> what they skipped (e.g. <code>print(f\"skipping bad port: {text!r}\")</code>), so you can find the broken config line afterwards.",
     quiz: [
       { q: "Which part of a traceback do you read first?", options: ["The top line", "The last line", "The middle", "None of it"], answer: 1,
@@ -919,6 +918,683 @@
         why: "The type (str) is fine but the value can't be turned into a number, so it's a ValueError." }
     ]
   });
+
+  /* ------------------------------------------------------------------ PY-108 */
+  LABS.push({
+    id: "py-108", n: 8, module: 1, ticket: "PY-108", xp: 100,
+    title: "Server inventory",
+    topic: "Nested data: lists of dicts",
+    from: "Dev Patel · Security team",
+    story: "<p>A new OpenSSL advisory just dropped. Our inventory export is a <b>list of servers</b>, and each server is a <b>dictionary</b> with another dictionary of installed packages inside it.</p>" +
+      "<p>I need to know which servers face the internet, which run a vulnerable OpenSSL, who owns what, and which ones to patch <em>tonight</em>.</p>",
+    learn:
+      "<h3>Data inside data</h3><p>Real data is rarely one flat list. Scan results, API responses and JSON files are usually a <b>list of dictionaries</b>, and those dictionaries can contain more lists and dictionaries. You reach inside by chaining <code>[ ]</code> lookups, one level at a time.</p>" +
+      ex('server = {"host": "web-01", "packages": {"openssl": "3.0.2", "nginx": "1.18.0"}}\nprint(server["host"])\nprint(server["packages"])\nprint(server["packages"]["openssl"])') +
+      "<p>Read <code>server[\"packages\"][\"openssl\"]</code> left to right: take the server, then its packages, then the openssl entry.</p>" +
+      "<h3>Looping over a list of dicts</h3><p>Each time round the loop, the variable holds one whole dictionary.</p>" +
+      ex('servers = [{"host": "web-01", "env": "prod"}, {"host": "ci-01", "env": "dev"}]\nfor s in servers:\n    print(s["host"], "is in", s["env"])') +
+      "<h3>Filtering</h3><p>Same accumulator pattern as before: an empty list, a loop, and an <code>if</code>.</p>" +
+      ex('servers = [{"host": "web-01", "env": "prod"}, {"host": "ci-01", "env": "dev"}]\nprod = []\nfor s in servers:\n    if s["env"] == "prod":\n        prod.append(s["host"])\nprint(prod)') +
+      "<h3>Grouping into a dict of lists</h3><p>To group items, make each key's value a list. Create the empty list the first time you see a key, then append to it.</p>" +
+      ex('servers = [{"host": "web-01", "env": "prod"}, {"host": "db-01", "env": "prod"}, {"host": "ci-01", "env": "dev"}]\nby_env = {}\nfor s in servers:\n    env = s["env"]\n    if env not in by_env:\n        by_env[env] = []\n    by_env[env].append(s["host"])\nprint(by_env)') +
+      "<h3>Missing keys deep down</h3><p>Chain <code>.get()</code> with an empty dict as the default, so a missing level doesn't crash:</p>" +
+      ex('s = {"host": "printer-01"}\nprint(s.get("packages", {}).get("openssl", "not installed"))') +
+      '<div class="callout"><b>Explore first.</b> When data is unfamiliar, print one item before writing the loop: <code>print(servers[0])</code> in the console shows you exactly what keys you have.</div>',
+    starter: py`
+      # PY-108 · Server inventory
+      servers = [
+          {"host": "web-01", "team": "web", "env": "prod", "public": True,
+           "packages": {"openssl": "3.0.2", "nginx": "1.18.0"}},
+          {"host": "web-02", "team": "web", "env": "prod", "public": True,
+           "packages": {"openssl": "3.0.13", "nginx": "1.24.0"}},
+          {"host": "db-01", "team": "data", "env": "prod", "public": False,
+           "packages": {"openssl": "3.0.2", "postgresql": "15.4"}},
+          {"host": "ci-01", "team": "platform", "env": "dev", "public": True,
+           "packages": {"openssl": "1.1.1f", "docker": "24.0.5"}},
+          {"host": "vpn-01", "team": "platform", "env": "prod", "public": True,
+           "packages": {"openssl": "3.0.2", "openvpn": "2.6.3"}},
+      ]
+      vulnerable_openssl = ["3.0.2", "1.1.1f"]
+
+      # 1) public_hosts: names of servers that face the internet
+
+
+      # 2) vulnerable: names of servers whose openssl version is in vulnerable_openssl
+
+
+      # 3) by_team: team -> list of its server names
+
+
+      # 4) Print "URGENT: <host> (<team>) openssl <version>" for servers that are
+      #    public AND vulnerable AND in prod
+
+    `,
+    objectives: [
+      {
+        id: "public",
+        text: "<code>public_hosts</code>: a list of the <code>host</code> names of every server where <code>public</code> is <code>True</code>, in order.",
+        hints: ["Loop over servers. Each s is a dict, so s[\"public\"] is True or False and s[\"host\"] is its name.", "public_hosts = []\nfor s in servers:\n    if s[\"public\"]:\n        public_hosts.append(s[\"host\"])"],
+        check: py`
+          def check(ns, out, run, src):
+              r = H.expect(ns, "public_hosts", ["web-01", "web-02", "ci-01", "vpn-01"], list)
+              if r is not True:
+                  return r
+              return H.alt(src, run, r"\"public\":\s*True", '"public": False',
+                           {"public_hosts": ["web-02", "ci-01", "vpn-01"]}, "web-01 being private")
+        `
+      },
+      {
+        id: "vuln",
+        text: "<code>vulnerable</code>: the host names whose OpenSSL version (inside <code>packages</code>) is in <code>vulnerable_openssl</code>.",
+        hints: ["Go two levels deep: s[\"packages\"][\"openssl\"] gives the version string. Then check it with in.", "vulnerable = []\nfor s in servers:\n    if s[\"packages\"][\"openssl\"] in vulnerable_openssl:\n        vulnerable.append(s[\"host\"])"],
+        check: py`
+          def check(ns, out, run, src):
+              r = H.expect(ns, "vulnerable", ["web-01", "db-01", "ci-01", "vpn-01"], list)
+              if r is not True:
+                  return r
+              return H.alt(src, run, r"vulnerable_openssl\s*=\s*\[[^\]]*\]", 'vulnerable_openssl = ["3.0.13"]',
+                           {"vulnerable": ["web-02"]}, "a different list of vulnerable versions")
+        `
+      },
+      {
+        id: "team",
+        text: "<code>by_team</code>: a dict mapping each team to a list of its host names, e.g. <code>{\"web\": [\"web-01\", \"web-02\"], ...}</code>.",
+        hints: ["Start with by_team = {}. For each server, create an empty list the first time you see its team, then append the host.", "by_team = {}\nfor s in servers:\n    team = s[\"team\"]\n    if team not in by_team:\n        by_team[team] = []\n    by_team[team].append(s[\"host\"])"],
+        check: py`
+          def check(ns, out, run, src):
+              r = H.expect(ns, "by_team", {"web": ["web-01", "web-02"], "data": ["db-01"], "platform": ["ci-01", "vpn-01"]}, dict)
+              if r is not True:
+                  return r
+              return H.alt(src, run, r"\"team\":\s*\"data\"", '"team": "web"',
+                           {"by_team": {"web": ["web-01", "web-02", "db-01"], "platform": ["ci-01", "vpn-01"]}},
+                           "db-01 moving to the web team")
+        `
+      },
+      {
+        id: "urgent",
+        text: "Print <code>URGENT: &lt;host&gt; (&lt;team&gt;) openssl &lt;version&gt;</code> for every server that is public <b>and</b> vulnerable <b>and</b> in <code>prod</code>.",
+        hints: ["Combine three conditions with and inside one loop. ci-01 is public and vulnerable but it's dev, so it shouldn't appear.", "for s in servers:\n    version = s[\"packages\"][\"openssl\"]\n    if s[\"public\"] and version in vulnerable_openssl and s[\"env\"] == \"prod\":\n        print(f\"URGENT: {s['host']} ({s['team']}) openssl {version}\")"],
+        check: py`
+          def check(ns, out, run, src):
+              want = ["URGENT: web-01 (web) openssl 3.0.2", "URGENT: vpn-01 (platform) openssl 3.0.2"]
+              got = [l for l in H.lines(out) if l.startswith("URGENT")]
+              if got != want:
+                  if not got:
+                      return "No URGENT lines yet. Expected:\n  " + "\n  ".join(want)
+                  return "Expected:\n  " + "\n  ".join(want) + "\nYou printed:\n  " + "\n  ".join(got)
+              new = H.sub(src, r"vulnerable_openssl\s*=\s*\[[^\]]*\]", 'vulnerable_openssl = ["3.0.13"]')
+              if new:
+                  n, o, e = run(new)
+                  got2 = [l for l in H.lines(o) if l.startswith("URGENT")]
+                  if got2 != ["URGENT: web-02 (web) openssl 3.0.13"]:
+                      return "When I changed vulnerable_openssl, the URGENT lines didn't follow. Build them from the data."
+              return True
+        `
+      }
+    ],
+    debrief: "<p>Ticket closed. web-01 and vpn-01 get patched tonight. db-01 and ci-01 are vulnerable too, but they aren't exposed to the internet in production, so they can wait for the normal patch window.</p>" +
+      "<p><b>That's real triage:</b> severity alone doesn't decide priority. <em>Exposure</em> (is it public?) and <em>environment</em> (is it prod?) matter just as much. Security teams make this call every day.</p>",
+    realworld: "In Module 2 you'll load data like this from a real JSON file with <code>json.load()</code>. It comes back as exactly this kind of list of dicts.",
+    quiz: [
+      { q: "<code>s = {\"pkg\": {\"ssl\": \"3.0\"}}</code>. How do you get <code>\"3.0\"</code>?", options: ["s[\"ssl\"]", "s[\"pkg\"][\"ssl\"]", "s.pkg.ssl", "s[\"pkg\", \"ssl\"]"], answer: 1,
+        why: "Chain the lookups: first the outer key, then the inner key." },
+      { q: "When grouping into a dict of lists, why check <code>if key not in d</code> first?", options: ["It's faster", "To create the empty list before appending to it", "Dicts require it", "To sort the keys"], answer: 1,
+        why: "Appending to a key that doesn't exist yet raises a KeyError, so create its list first." },
+      { q: "A server is vulnerable but not public and not in prod. Its patch priority is…", options: ["Highest", "Lower than an exposed prod server", "Zero, ignore it", "Same as everything else"], answer: 1,
+        why: "It still needs patching, but exposure and environment push exposed production servers to the front." }
+    ]
+  });
+
+  /* ------------------------------------------------------------------ PY-109 */
+  LABS.push({
+    id: "py-109", n: 9, module: 1, ticket: "PY-109", xp: 100,
+    title: "Vulnerability report",
+    topic: "zip, enumerate, sorting & formatting",
+    from: "Dev Patel · Security team",
+    story: "<p>The scanner gave us two lists: the findings, and their CVSS scores in the same order. Management wants a <b>ranked, numbered report</b>, worst first.</p>" +
+      "<p>Also, schedule every scan type on every host, and add the average score at the bottom.</p>",
+    learn:
+      "<h3>Tuples</h3><p>A tuple is like a list that can't be changed, written with round brackets. It's handy for a fixed group of values, like a finding and its score.</p>" +
+      ex('pair = ("Redis exposed", 9.8)\nprint(pair[0], pair[1])\nname, score = pair\nprint(name, "scores", score)') +
+      "<h3>zip(): walk two lists side by side</h3><p><code>zip()</code> pairs up items at the same position.</p>" +
+      ex('names = ["web-01", "db-01"]\nips = ["10.0.0.10", "10.0.0.20"]\nfor name, ip in zip(names, ips):\n    print(name, "->", ip)\nprint(list(zip(names, ips)))') +
+      "<h3>enumerate(): number things as you loop</h3><p><code>enumerate()</code> gives you a counter and the item together. <code>start=1</code> makes it count from 1, the way people number lists.</p>" +
+      ex('steps = ["build", "test", "deploy"]\nfor i, step in enumerate(steps, start=1):\n    print(f"{i}. {step}")') +
+      "<h3>Sorting with a key</h3><p><code>sorted()</code> returns a new sorted list. To sort by something specific, like the score inside each pair, give it a <code>key</code> function. <code>reverse=True</code> puts the biggest first.</p>" +
+      ex('pairs = [("web", 3.1), ("db", 9.0), ("ci", 5.5)]\n\ndef by_score(pair):\n    return pair[1]\n\nprint(sorted(pairs, key=by_score, reverse=True))') +
+      "<p>For a small key function, people often write a <code>lambda</code>, a one-line function with no name. These two do the same thing:</p>" +
+      ex('pairs = [("web", 3.1), ("db", 9.0), ("ci", 5.5)]\nprint(sorted(pairs, key=lambda p: p[1]))') +
+      "<h3>Nested loops</h3><p>A loop inside a loop runs the inner loop completely for every round of the outer one.</p>" +
+      ex('for host in ["web-01", "db-01"]:\n    for port in [22, 443]:\n        print(host, port)') +
+      "<h3>Formatting numbers</h3><p>Inside an f-string, <code>:.1f</code> shows a number with 1 decimal place, and <code>:.2f</code> with 2.</p>" +
+      ex('avg = 35.7 / 5\nprint(avg)\nprint(f"{avg:.2f}")\nprint(f"{9.8:.1f}")\nprint(sum([1, 2, 3]), len([1, 2, 3]))'),
+    starter: py`
+      # PY-109 · Vulnerability report
+      findings = ["Outdated OpenSSL", "Redis exposed", "Weak TLS ciphers", "Telnet enabled", "Missing HSTS"]
+      scores = [7.5, 9.8, 5.3, 8.8, 4.3]
+      hosts = ["web-01", "db-01"]
+      scan_types = ["tls", "ssh"]
+
+      # 1) pairs: list of (finding, score) tuples
+
+
+      # 2) ranked: pairs sorted by score, highest first
+
+
+      # 3) Print the numbered report: "1. [9.8] Redis exposed"
+
+
+      # 4) schedule: "host:scan" for every host and every scan type
+
+
+      # 5) Print "Average CVSS: 7.14"
+
+    `,
+    objectives: [
+      {
+        id: "pairs",
+        text: "<code>pairs</code>: a list of <code>(finding, score)</code> tuples, in the original order.",
+        hints: ["zip() pairs the two lists. Wrap it in list() to get an actual list.", "pairs = list(zip(findings, scores))"],
+        check: py`
+          def check(ns, out, run, src):
+              want = [("Outdated OpenSSL", 7.5), ("Redis exposed", 9.8), ("Weak TLS ciphers", 5.3), ("Telnet enabled", 8.8), ("Missing HSTS", 4.3)]
+              return H.expect(ns, "pairs", want, list)
+        `
+      },
+      {
+        id: "ranked",
+        text: "<code>ranked</code>: <code>pairs</code> sorted by score, highest first.",
+        hints: ["sorted(pairs, key=..., reverse=True). The key function receives one pair and should return its score, pair[1].", "ranked = sorted(pairs, key=lambda p: p[1], reverse=True)"],
+        check: py`
+          def check(ns, out, run, src):
+              want = [("Redis exposed", 9.8), ("Telnet enabled", 8.8), ("Outdated OpenSSL", 7.5), ("Weak TLS ciphers", 5.3), ("Missing HSTS", 4.3)]
+              r = H.expect(ns, "ranked", want, list)
+              if r is not True:
+                  return r
+              return H.alt(src, run, r"scores\s*=\s*\[[^\]]*\]", "scores = [1.0, 2.0, 3.0, 4.0, 5.0]",
+                           {"ranked": [("Missing HSTS", 5.0), ("Telnet enabled", 4.0), ("Weak TLS ciphers", 3.0), ("Redis exposed", 2.0), ("Outdated OpenSSL", 1.0)]},
+                           "different scores")
+        `
+      },
+      {
+        id: "report",
+        text: "Print one numbered line per finding in <code>ranked</code>, like <code>1. [9.8] Redis exposed</code>. Use <code>enumerate</code> and <code>:.1f</code>.",
+        hints: ["for i, pair in enumerate(ranked, start=1): then unpack the pair into name and score.", "for i, pair in enumerate(ranked, start=1):\n    name, score = pair\n    print(f\"{i}. [{score:.1f}] {name}\")"],
+        check: py`
+          def check(ns, out, run, src):
+              want = ["1. [9.8] Redis exposed", "2. [8.8] Telnet enabled", "3. [7.5] Outdated OpenSSL", "4. [5.3] Weak TLS ciphers", "5. [4.3] Missing HSTS"]
+              got = [l for l in H.lines(out) if re.match(r"^\d+\.\s", l)]
+              if got != want:
+                  if not got:
+                      return "No numbered lines yet. The first one should be:\n  " + want[0]
+                  return "Expected:\n  " + "\n  ".join(want) + "\nYou printed:\n  " + "\n  ".join(got)
+              if "enumerate" not in src:
+                  return "The lines are right. Now number them with enumerate() instead of a counter you manage yourself."
+              return True
+        `
+      },
+      {
+        id: "schedule",
+        text: "<code>schedule</code>: a list with <code>\"host:scan\"</code> for every host and every scan type: <code>[\"web-01:tls\", \"web-01:ssh\", \"db-01:tls\", \"db-01:ssh\"]</code>.",
+        hints: ["Two loops, one inside the other: hosts outside, scan_types inside.", "schedule = []\nfor host in hosts:\n    for scan in scan_types:\n        schedule.append(f\"{host}:{scan}\")"],
+        check: py`
+          def check(ns, out, run, src):
+              r = H.expect(ns, "schedule", ["web-01:tls", "web-01:ssh", "db-01:tls", "db-01:ssh"], list)
+              if r is not True:
+                  return r
+              return H.alt(src, run, r"hosts\s*=\s*\[[^\]]*\]", 'hosts = ["api-01"]',
+                           {"schedule": ["api-01:tls", "api-01:ssh"]}, "a different list of hosts")
+        `
+      },
+      {
+        id: "avg",
+        text: "Print <code>Average CVSS: 7.14</code>: the average of <code>scores</code> with 2 decimal places.",
+        hints: ["Average = sum(scores) / len(scores). Format it with :.2f inside the f-string.", "avg = sum(scores) / len(scores)\nprint(f\"Average CVSS: {avg:.2f}\")"],
+        check: py`
+          def check(ns, out, run, src):
+              if "Average CVSS: 7.14" not in H.lines(out):
+                  got = [l for l in H.lines(out) if l.startswith("Average")]
+                  return "Expected the line 'Average CVSS: 7.14'" + (", got '" + got[-1] + "'." if got else ".")
+              new = H.sub(src, r"scores\s*=\s*\[[^\]]*\]", "scores = [1.0, 2.0, 3.0, 4.0, 5.0]")
+              if new:
+                  n, o, e = run(new)
+                  if "Average CVSS: 3.00" not in H.lines(o):
+                      return "When I changed the scores, the average didn't change. Calculate it with sum() and len()."
+              return True
+        `
+      }
+    ],
+    debrief: "<p>Ticket closed. Management gets a ranked list, so the exposed Redis server is the first thing they see.</p>" +
+      "<p><b>About CVSS:</b> it scores a vulnerability from 0 to 10 (9.0+ is <em>critical</em>, 7.0–8.9 <em>high</em>). Ranking by CVSS is a good start, but as you saw in PY-108, exposure and environment should adjust the order.</p>",
+    realworld: "<code>sorted(..., key=...)</code> is everywhere in real scripts: biggest log files, oldest accounts, most failed logins. It's one of the most-used patterns in Python.",
+    quiz: [
+      { q: "What does <code>list(zip([1, 2], [\"a\", \"b\"]))</code> give?", options: ["[1, 2, \"a\", \"b\"]", "[(1, \"a\"), (2, \"b\")]", "{1: \"a\", 2: \"b\"}", "An error"], answer: 1,
+        why: "zip pairs items by position into tuples." },
+      { q: "<code>for i, x in enumerate([\"a\", \"b\"])</code>: what is <code>i</code> on the first round?", options: ["1", "0", "\"a\"", "None"], answer: 1,
+        why: "enumerate counts from 0 unless you pass start=1." },
+      { q: "What does <code>f\"{2/3:.2f}\"</code> show?", options: ["0.6666", "0.67", "0.66", "2/3"], answer: 1,
+        why: ":.2f rounds to 2 decimal places." }
+    ]
+  });
+
+  /* ------------------------------------------------------------------ PY-110 capstone */
+  LABS.push({
+    id: "py-110", n: 10, module: 1, ticket: "PY-110", xp: 200, capstone: true,
+    title: "Quarterly access review",
+    topic: "Module 1 capstone project",
+    from: "Maya Chen & Dev Patel",
+    story: "<p>It's the end of the quarter, and the auditors want an <b>access review</b>: which accounts have weak passwords, no MFA, admin rights without MFA, or haven't been used in months.</p>" +
+      "<p>HR's export is messy, as usual. Build the whole audit script yourself. This is everything from Module 1 in one project.</p>",
+    learn:
+      '<div class="callout warn"><b>Capstone rules.</b> There are no hints. Build it one function at a time and test each one in the console as you go (e.g. <code>normalize("  A@B.io ")</code> after pressing Run). ' +
+      "If you get completely stuck, the Tasks tab has a button to reveal the full solution. The capstone then earns half XP.</div>" +
+      "<h3>The data</h3><p><code>accounts</code> is a list of dicts. Each one has an <code>email</code> (messy), a <code>password</code>, <code>mfa</code> (True/False), <code>last_login_days</code> (a number, but one record has bad data) and <code>groups</code> (a list).</p>" +
+      "<h3>What to build</h3>" +
+      '<table class="t"><tr><th>Piece</th><th>Spec</th></tr>' +
+      "<tr><td><code>normalize(email)</code></td><td>returns the email with no spaces at the ends, all lowercase</td></tr>" +
+      "<tr><td><code>is_strong(password)</code></td><td>True if 12+ characters, not in <code>COMMON</code>, not letters-only, and has an uppercase letter</td></tr>" +
+      "<tr><td><code>audit(account)</code></td><td>returns a <b>list</b> of issue strings for one account (empty list if it's clean). Check them in this order:<br>" +
+      "1. <code>\"weak password\"</code> if the password isn't strong<br>" +
+      "2. <code>\"no MFA\"</code> if mfa is False<br>" +
+      "3. <code>\"admin without MFA\"</code> if \"admin\" is in its groups and mfa is False<br>" +
+      "4. <code>\"login data missing\"</code> if last_login_days isn't a whole number (<code>type(x) is int</code>)<br>" +
+      "5. otherwise <code>\"inactive\"</code> if last_login_days is more than 90</td></tr>" +
+      "<tr><td><code>report</code></td><td>a dict: normalized email → its issues list, only for accounts that have at least one issue</td></tr>" +
+      "<tr><td>printed report</td><td>one line per account in <code>report</code>, most issues first (ties keep their original order), then a summary line</td></tr></table>" +
+      "<h3>Expected output</h3>" +
+      '<pre class="code">bob.jones@kestrel.io: weak password, no MFA, admin without MFA\nsvc.backup@kestrel.io: weak password, no MFA, admin without MFA\nchen.wei@kestrel.io: weak password, login data missing\npriya.rao@kestrel.io: inactive\n4 of 6 accounts need action</pre>' +
+      "<h3>Two new tools you'll want</h3>" +
+      ex('issues = ["weak password", "no MFA"]\nprint(", ".join(issues))') +
+      "<p><code>\", \".join(list)</code> glues a list of strings together with <code>\", \"</code> between them.</p>" +
+      ex('report = {"a@x.io": ["x"], "b@x.io": ["x", "y", "z"], "c@x.io": ["x", "y"]}\nfor email, issues in sorted(report.items(), key=lambda item: len(item[1]), reverse=True):\n    print(email, len(issues))') +
+      "<p><code>report.items()</code> gives (email, issues) pairs, and the key sorts them by how many issues each has.</p>",
+    starter: py`
+      # PY-110 · Quarterly access review (Module 1 capstone)
+      COMMON = ["password1234", "qwertyuiop12", "letmeinletmein"]
+
+      accounts = [
+          {"email": "  Alice.Smith@Kestrel.IO ", "password": "Correct-Horse-42",
+           "mfa": True, "last_login_days": 3, "groups": ["dev"]},
+          {"email": "bob.jones@kestrel.io", "password": "hunter2",
+           "mfa": False, "last_login_days": 12, "groups": ["dev", "admin"]},
+          {"email": "Priya.Rao@Kestrel.io", "password": "Summer-Breeze-2024",
+           "mfa": True, "last_login_days": 140, "groups": ["finance"]},
+          {"email": "svc.backup@kestrel.io", "password": "qwertyuiop12",
+           "mfa": False, "last_login_days": 1, "groups": ["admin"]},
+          {"email": "Chen.Wei@kestrel.io", "password": "LongButNoDigits",
+           "mfa": True, "last_login_days": "unknown", "groups": ["dev"]},
+          {"email": "dana.lee@kestrel.io", "password": "Tr1cky-Pass-Phrase",
+           "mfa": True, "last_login_days": 30, "groups": ["admin"]},
+      ]
+
+
+      def normalize(email):
+          pass
+
+
+      def is_strong(password):
+          pass
+
+
+      def audit(account):
+          pass
+
+
+      # Build report, then print it (most issues first) and the summary line
+
+    `,
+    solution: py`
+      COMMON = ["password1234", "qwertyuiop12", "letmeinletmein"]
+
+      accounts = [
+          {"email": "  Alice.Smith@Kestrel.IO ", "password": "Correct-Horse-42",
+           "mfa": True, "last_login_days": 3, "groups": ["dev"]},
+          {"email": "bob.jones@kestrel.io", "password": "hunter2",
+           "mfa": False, "last_login_days": 12, "groups": ["dev", "admin"]},
+          {"email": "Priya.Rao@Kestrel.io", "password": "Summer-Breeze-2024",
+           "mfa": True, "last_login_days": 140, "groups": ["finance"]},
+          {"email": "svc.backup@kestrel.io", "password": "qwertyuiop12",
+           "mfa": False, "last_login_days": 1, "groups": ["admin"]},
+          {"email": "Chen.Wei@kestrel.io", "password": "LongButNoDigits",
+           "mfa": True, "last_login_days": "unknown", "groups": ["dev"]},
+          {"email": "dana.lee@kestrel.io", "password": "Tr1cky-Pass-Phrase",
+           "mfa": True, "last_login_days": 30, "groups": ["admin"]},
+      ]
+
+
+      def normalize(email):
+          return email.strip().lower()
+
+
+      def is_strong(password):
+          if len(password) < 12:
+              return False
+          if password in COMMON:
+              return False
+          if password.isalpha():
+              return False
+          if password.lower() == password:
+              return False
+          return True
+
+
+      def audit(account):
+          issues = []
+          if not is_strong(account["password"]):
+              issues.append("weak password")
+          if not account["mfa"]:
+              issues.append("no MFA")
+              if "admin" in account["groups"]:
+                  issues.append("admin without MFA")
+          days = account["last_login_days"]
+          if type(days) is not int:
+              issues.append("login data missing")
+          elif days > 90:
+              issues.append("inactive")
+          return issues
+
+
+      report = {}
+      for account in accounts:
+          issues = audit(account)
+          if issues:
+              report[normalize(account["email"])] = issues
+
+      for email, issues in sorted(report.items(), key=lambda item: len(item[1]), reverse=True):
+          print(f"{email}: {', '.join(issues)}")
+      print(f"{len(report)} of {len(accounts)} accounts need action")
+    `,
+    objectives: [
+      {
+        id: "normalize", hints: [],
+        text: "<code>normalize(email)</code> returns the email trimmed and lowercased.",
+        check: py`
+          def check(ns, out, run, src):
+              return H.func(ns, "normalize", [(("  Alice.Smith@Kestrel.IO ",), "alice.smith@kestrel.io"),
+                                              (("BOB@X.IO",), "bob@x.io"), (("ok@x.io",), "ok@x.io")])
+        `
+      },
+      {
+        id: "strong", hints: [],
+        text: "<code>is_strong(password)</code> applies all four rules, including the <code>COMMON</code> list.",
+        check: py`
+          def check(ns, out, run, src):
+              return H.func(ns, "is_strong", [(("Correct-Horse-42",), True), (("hunter2",), False),
+                                              (("qwertyuiop12",), False), (("LongButNoDigits",), False),
+                                              (("lowercase-only-42",), False), (("Tr1cky-Pass-Phrase",), True)])
+        `
+      },
+      {
+        id: "audit", hints: [],
+        text: "<code>audit(account)</code> returns the right issues, in the right order, and copes with bad <code>last_login_days</code> data.",
+        check: py`
+          def check(ns, out, run, src):
+              def acct(pw="Strong-Pass-99", mfa=True, days=10, groups=()):
+                  return {"email": "t@x.io", "password": pw, "mfa": mfa, "last_login_days": days, "groups": list(groups)}
+              cases = [
+                  ((acct(),), []),
+                  ((acct(pw="hunter2", mfa=False, days=12, groups=["dev", "admin"]),), ["weak password", "no MFA", "admin without MFA"]),
+                  ((acct(days=140),), ["inactive"]),
+                  ((acct(days=90),), []),
+                  ((acct(days=91),), ["inactive"]),
+                  ((acct(pw="LongButNoDigits", days="unknown"),), ["weak password", "login data missing"]),
+                  ((acct(days=None),), ["login data missing"]),
+                  ((acct(mfa=False, groups=["dev"]),), ["no MFA"]),
+                  ((acct(groups=["admin"]),), []),
+              ]
+              f = H.fn(ns, "audit")
+              if not f:
+                  return "I can't find a function called audit."
+              for args, want in cases:
+                  ok, got = H.call(f, *args)
+                  a = args[0]
+                  desc = "audit() for an account with password=" + repr(a["password"]) + ", mfa=" + repr(a["mfa"]) + ", last_login_days=" + repr(a["last_login_days"]) + ", groups=" + repr(a["groups"])
+                  if not ok:
+                      return desc + " crashed: " + type(got).__name__ + ": " + str(got)
+                  if got != want:
+                      return desc + " returned " + repr(got) + ", expected " + repr(want) + "."
+              return True
+        `
+      },
+      {
+        id: "report", hints: [],
+        text: "<code>report</code> maps each normalized email to its issues, for flagged accounts only.",
+        check: py`
+          def check(ns, out, run, src):
+              want = {"bob.jones@kestrel.io": ["weak password", "no MFA", "admin without MFA"],
+                      "priya.rao@kestrel.io": ["inactive"],
+                      "svc.backup@kestrel.io": ["weak password", "no MFA", "admin without MFA"],
+                      "chen.wei@kestrel.io": ["weak password", "login data missing"]}
+              return H.expect(ns, "report", want, dict)
+        `
+      },
+      {
+        id: "print", hints: [],
+        text: "The printed report matches the expected output exactly: most issues first, then <code>4 of 6 accounts need action</code>.",
+        check: py`
+          def check(ns, out, run, src):
+              want = ["bob.jones@kestrel.io: weak password, no MFA, admin without MFA",
+                      "svc.backup@kestrel.io: weak password, no MFA, admin without MFA",
+                      "chen.wei@kestrel.io: weak password, login data missing",
+                      "priya.rao@kestrel.io: inactive",
+                      "4 of 6 accounts need action"]
+              r = H.printed(out, want)
+              if r is not True:
+                  return r
+              new = H.sub(src, r"\"mfa\":\s*False", '"mfa": True')
+              if new:
+                  n, o, e = run(new)
+                  want2 = ["svc.backup@kestrel.io: weak password, no MFA, admin without MFA",
+                           "chen.wei@kestrel.io: weak password, login data missing",
+                           "bob.jones@kestrel.io: weak password",
+                           "priya.rao@kestrel.io: inactive",
+                           "4 of 6 accounts need action"]
+                  if H.lines(o) != want2:
+                      return "Works for this data, but when I turned on MFA for bob, the report didn't update correctly. Build every line from audit() results."
+              return True
+        `
+      }
+    ],
+    debrief: "<p><b>Module 1 complete!</b> You built a real audit tool from scratch: data cleaning, validation rules, nested data, error-tolerant checks, sorting and a formatted report.</p>" +
+      "<p>Access reviews like this are a standard control in security audits such as SOC 2 and ISO 27001. Teams often automate them with scripts very close to the one you just wrote.</p>" +
+      "<p>Next up, <b>Module 2: Working with data</b>: files, regex, JSON, CSV and YAML.</p>",
+    realworld: "Copy your solution into a file called <code>access_review.py</code> and run it with <code>python access_review.py</code>. It's your first portfolio script. In a later side quest you'll push it to your GitHub.",
+    quiz: []
+  });
+
+  /* Reference solutions, shown after a lab is closed ("Compare with a reference solution"). */
+  var SOLUTIONS = {
+    "py-101": py`
+      server_name = "web-01"
+      cpu_percent = 37.5
+      uptime_days = 12
+      is_healthy = True
+      uptime_hours = uptime_days * 24
+      print(f"{server_name} | CPU {cpu_percent}% | up {uptime_hours}h | healthy: {is_healthy}")
+    `,
+    "py-102": py`
+      raw = "  Alice.Smith@Kestrel.IO  "
+      clean = raw.strip().lower()
+      username, domain = clean.split("@")
+      login = username.replace(".", "_")
+      first, last = username.split(".")
+      initials = (first[0] + last[0]).upper()
+    `,
+    "py-103": py`
+      password = input("New password: ")
+      common = ["password1234", "qwertyuiop12", "letmeinletmein"]
+
+      if len(password) < 12:
+          print("REJECT: too short")
+      elif password in common:
+          print("REJECT: too common")
+      elif password.isalpha():
+          print("REJECT: needs a number or symbol")
+      elif password.lower() == password:
+          print("REJECT: needs an uppercase letter")
+      else:
+          print("ACCEPT")
+    `,
+    "py-104": py`
+      open_ports = [22, 80, 443, 3306, 8080, 23, 6379]
+      risky_ports = [23, 3306, 6379]
+
+      for port in open_ports:
+          print(f"port {port} open")
+
+      risky_count = 0
+      to_close = []
+      for port in open_ports:
+          if port in risky_ports:
+              risky_count += 1
+              to_close.append(port)
+
+      attempts = 1
+      while not ping("db-01"):
+          attempts += 1
+    `,
+    "py-105": py`
+      failed_ips = [
+          "185.220.101.47", "10.0.0.5", "185.220.101.47", "45.155.205.233",
+          "185.220.101.47", "192.168.1.20", "45.155.205.233", "185.220.101.47",
+          "10.0.0.5", "45.155.205.233", "185.220.101.47", "10.0.0.5",
+      ]
+      owners = {"10.0.0.5": "vpn-gateway", "192.168.1.20": "printer"}
+
+      counts = {}
+      for ip in failed_ips:
+          counts[ip] = counts.get(ip, 0) + 1
+
+      top_ip = max(counts, key=counts.get)
+
+      blocklist = []
+      for ip, n in counts.items():
+          if n >= 3:
+              blocklist.append(ip)
+      blocklist = sorted(blocklist)
+
+      for ip in blocklist:
+          owner = owners.get(ip, "unknown")
+          print(f"{ip} ({owner}): {counts[ip]} failures")
+    `,
+    "py-106": py`
+      def is_strong(password):
+          if len(password) < 12:
+              return False
+          if password.isalpha():
+              return False
+          if password.lower() == password:
+              return False
+          return True
+
+
+      def mask(secret, show=4):
+          if len(secret) <= show:
+              return "*" * len(secret)
+          return "*" * (len(secret) - show) + secret[-show:]
+
+
+      def risk_level(port):
+          if port in [23, 3389, 6379]:
+              return "high"
+          if port in [21, 3306]:
+              return "medium"
+          return "low"
+
+
+      def summarize(ports):
+          totals = {"high": 0, "medium": 0, "low": 0}
+          for port in ports:
+              totals[risk_level(port)] += 1
+          return totals
+
+
+      print(is_strong("Correct-Horse-42"))
+      print(mask("sk_live_abcd1234"))
+    `,
+    "py-107": py`
+      ports_raw = ["22", "80", "http", "70000", " 443 ", ""]
+
+
+      def parse_port(text):
+          port = int(text)
+          if port < 1 or port > 65535:
+              raise ValueError(f"port out of range: {port}")
+          return port
+
+
+      def safe_parse(text):
+          try:
+              return parse_port(text)
+          except ValueError:
+              return None
+
+
+      def read_config(path):
+          try:
+              with open(path) as f:
+                  return f.read()
+          except FileNotFoundError:
+              return ""
+
+
+      valid = []
+      errors = 0
+      for text in ports_raw:
+          port = safe_parse(text)
+          if port is None:
+              errors += 1
+          else:
+              valid.append(port)
+    `,
+    "py-108": py`
+      # (data from the starter code goes here)
+
+      public_hosts = []
+      for s in servers:
+          if s["public"]:
+              public_hosts.append(s["host"])
+
+      vulnerable = []
+      for s in servers:
+          if s["packages"]["openssl"] in vulnerable_openssl:
+              vulnerable.append(s["host"])
+
+      by_team = {}
+      for s in servers:
+          team = s["team"]
+          if team not in by_team:
+              by_team[team] = []
+          by_team[team].append(s["host"])
+
+      for s in servers:
+          version = s["packages"]["openssl"]
+          if s["public"] and version in vulnerable_openssl and s["env"] == "prod":
+              print(f"URGENT: {s['host']} ({s['team']}) openssl {version}")
+    `,
+    "py-109": py`
+      findings = ["Outdated OpenSSL", "Redis exposed", "Weak TLS ciphers", "Telnet enabled", "Missing HSTS"]
+      scores = [7.5, 9.8, 5.3, 8.8, 4.3]
+      hosts = ["web-01", "db-01"]
+      scan_types = ["tls", "ssh"]
+
+      pairs = list(zip(findings, scores))
+      ranked = sorted(pairs, key=lambda p: p[1], reverse=True)
+
+      for i, pair in enumerate(ranked, start=1):
+          name, score = pair
+          print(f"{i}. [{score:.1f}] {name}")
+
+      schedule = []
+      for host in hosts:
+          for scan in scan_types:
+              schedule.append(f"{host}:{scan}")
+
+      avg = sum(scores) / len(scores)
+      print(f"Average CVSS: {avg:.2f}")
+    `
+  };
+  LABS.forEach(function (l) { if (!l.solution && SOLUTIONS[l.id]) l.solution = SOLUTIONS[l.id]; });
 
   /* Shared helper appended to PY-103 checks (defined below; hoisted into the strings above by reference). */
   function VERDICT_SRC() {
@@ -941,21 +1617,31 @@
 
   /* Upcoming labs — shown in the sidebar as the roadmap. */
   var UPCOMING = [
-    { n: 8, module: 2, title: "Files", topic: "Read & write files" },
-    { n: 9, module: 2, title: "Regex", topic: "Find IPs, emails, timestamps" },
-    { n: 10, module: 2, title: "JSON & CSV", topic: "Reports and configs" },
-    { n: 11, module: 2, title: "Standard library", topic: "pathlib, datetime, collections, argparse" },
-    { n: 12, module: 3, title: "Log analysis", topic: "Detect a brute-force attack" },
-    { n: 13, module: 3, title: "Hashing", topic: "File integrity with hashlib" },
-    { n: 14, module: 3, title: "Secrets scanner", topic: "Find hard-coded keys" },
-    { n: 15, module: 3, title: "Dependency check", topic: "Match packages to CVEs" },
-    { n: 16, module: 3, title: "Classes", topic: "Model a security finding" },
-    { n: 17, module: 3, title: "Testing", topic: "assert and pytest" },
-    { n: 18, module: 4, title: "SQL injection", topic: "Exploit it, then fix it" },
-    { n: 19, module: 4, title: "Command injection", topic: "Unsafe eval and shell calls" },
-    { n: 20, module: 4, title: "Password storage", topic: "Salted hashes with PBKDF2" },
-    { n: 21, module: 4, title: "Capstone", topic: "Build a mini security scanner" }
+    { module: 2, title: "Files", topic: "Read & write files" },
+    { module: 2, title: "Sets, tuples & comprehensions", topic: "Compare and transform data" },
+    { module: 2, title: "Regex", topic: "Find IPs, emails, timestamps" },
+    { module: 2, title: "JSON & CSV", topic: "Reports and exports" },
+    { module: 2, title: "YAML configs", topic: "Spot pipeline misconfigurations" },
+    { module: 2, title: "Standard library", topic: "pathlib, datetime, collections, argparse" },
+    { module: 2, title: "Module 2 capstone", topic: "Project", capstone: true },
+    { module: 3, title: "Log analysis", topic: "Detect a brute-force attack" },
+    { module: 3, title: "HTTP & APIs", topic: "Talk to a (simulated) REST API" },
+    { module: 3, title: "Hashing", topic: "File integrity with hashlib" },
+    { module: 3, title: "Secrets scanner", topic: "Find hard-coded keys" },
+    { module: 3, title: "Dependency check", topic: "Match packages to CVEs" },
+    { module: 3, title: "Env vars & CI gates", topic: "Secrets from env, exit codes" },
+    { module: 3, title: "Classes", topic: "Model a security finding" },
+    { module: 3, title: "Testing", topic: "assert and pytest" },
+    { module: 3, title: "Module 3 capstone", topic: "Project", capstone: true },
+    { module: 4, title: "Code review", topic: "Spot the vulnerable line" },
+    { module: 4, title: "SQL injection", topic: "Exploit it, then fix it" },
+    { module: 4, title: "Command injection", topic: "Unsafe eval and shell calls" },
+    { module: 4, title: "XSS", topic: "Output encoding" },
+    { module: 4, title: "Path traversal", topic: "Keep users inside the folder" },
+    { module: 4, title: "Insecure deserialization", topic: "pickle and yaml.load" },
+    { module: 4, title: "Password storage", topic: "Salted hashes & secure tokens" },
+    { module: 4, title: "Module 4 capstone", topic: "Build a mini security scanner", capstone: true }
   ];
 
-  window.PY_TRACK = { MODULES: MODULES, LABS: LABS, UPCOMING: UPCOMING };
+  window.PY_TRACK = { MODULES: MODULES, LABS: LABS, UPCOMING: UPCOMING, py: py };
 })();

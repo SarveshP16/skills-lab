@@ -43,7 +43,7 @@
 
   <section class="work" aria-label="Code">
     <div class="toolbar">
-      <span class="fname">main.py</span>
+      <span class="fname" id="fname">main.py</span>
       <span class="status" id="pyStatus"><i></i><span>Loading Python…</span></span>
       <span class="spacer"></span>
       <button class="btn small ghost" id="resetCode" title="Put the starter code back">Reset code</button>
@@ -69,7 +69,7 @@
 
 <div class="modal" id="modal" hidden>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mTitle">
-    <div class="stamp">TICKET CLOSED</div>
+    <div class="stamp" id="mStamp">TICKET CLOSED</div>
     <h2 id="mTitle"></h2>
     <div class="xpline" id="mXP"></div>
     <div class="debrief" id="mDebrief"></div>
@@ -88,6 +88,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
 <script src="../assets/js/progress.js"></script>
 <script src="labs.js"></script>
+<script src="drills.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@ Hands-on labs for learning Python, PowerShell, Linux, Git & GitHub, Networking, 
 
 | # | Track | Status |
 |---|-------|--------|
-| 1 | Python | Module 1 (labs 1–7) open |
+| 1 | Python | Module 1 open: 9 labs, a capstone project and 27 practice drills (34 labs planned) |
 | 2 | PowerShell | planned |
 | 3 | Linux | planned |
 | 4 | Git & GitHub | planned |

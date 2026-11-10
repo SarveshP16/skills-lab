@@ -1,4 +1,4 @@
-/* sudo learn — Python track UI: editor, console, tasks, XP and completion. */
+/* sudo learn — Python track UI: editor, console, tasks, drills, capstones, XP and completion. */
 (function () {
   "use strict";
 
@@ -8,6 +8,7 @@
   var RUN_TIMEOUT = 8000;
   var HINT_COST = 10;
   var QUIZ_XP = 10;
+  var DRILL_XP = 5;
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -76,6 +77,42 @@
     el.lastChild.textContent = text;
   }
 
+  /* ---------------------------------------------------------------- State */
+  var state = { lab: null, results: null, running: false, drill: null, drillResult: null };
+
+  function prog(lab) { return SL.lab(TRACK, (lab || state.lab).id); }
+  function codeKey() { return state.drill ? state.lab.id + "~" + state.drill.id : state.lab.id; }
+  function hintsUsed(p) {
+    var n = 0, h = p.hints || {};
+    for (var k in h) n += h[k];
+    return n;
+  }
+  function quizXP(p) {
+    var n = 0, q = p.quiz || {};
+    for (var k in q) if (q[k]) n += QUIZ_XP;
+    return n;
+  }
+  function drillXP(p) {
+    var n = 0, d = p.drills || {};
+    for (var k in d) if (d[k].done && !d[k].revealed) n += DRILL_XP;
+    return n;
+  }
+  function labXP(lab, p) {
+    if (lab.capstone) return p.revealed ? lab.xp / 2 : lab.xp;
+    return Math.max(lab.xp / 2, lab.xp - HINT_COST * hintsUsed(p));
+  }
+  function saveXP(lab) {
+    var p = prog(lab);
+    SL.setLab(TRACK, lab.id, { xp: (p.done ? labXP(lab, p) + quizXP(p) : 0) + drillXP(p) });
+    renderXP();
+  }
+
+  function renderXP() {
+    var xp = SL.totalXP();
+    var r = SL.rank(xp);
+    $("xpBox").innerHTML = "rank <b>" + r.name + "</b> · <b>" + xp + "</b> XP";
+  }
+
   /* ---------------------------------------------------------------- Editor */
   var editor = CodeMirror.fromTextArea($("code"), {
     mode: { name: "python", version: 3 },
@@ -95,17 +132,39 @@
       "Cmd-Enter": function () { runCode(); }
     }
   });
-  var saveTimer = null;
   var errLine = null;
+  var loading = false;
   editor.on("change", function () {
     clearErrLine();
-    if (!state.lab) return;
-    clearTimeout(saveTimer);
-    var id = state.lab.id;
-    saveTimer = setTimeout(function () { SL.setCode(TRACK, id, editor.getValue()); }, 400);
+    if (!state.lab || loading) return;
+    SL.setCode(TRACK, codeKey(), editor.getValue());
   });
+  function setEditor(code) {
+    loading = true;
+    editor.setValue(code);
+    editor.clearHistory();
+    loading = false;
+    clearErrLine();
+  }
   function clearErrLine() {
     if (errLine != null) { editor.removeLineClass(errLine, "background", "cm-errline"); errLine = null; }
+  }
+  function highlight(root) {
+    Array.prototype.forEach.call(root.querySelectorAll("pre[data-hl]"), function (pre) {
+      pre.classList.add("cm-s-default");
+      CodeMirror.runMode(pre.textContent, "python", pre);
+      pre.removeAttribute("data-hl");
+    });
+  }
+  function copyText(text, btn) {
+    function done() { var t = btn.textContent; btn.textContent = "Copied ✓"; setTimeout(function () { btn.textContent = t; }, 1400); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
+    else {
+      var ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) { /* ignore */ }
+      document.body.removeChild(ta);
+    }
   }
 
   /* ---------------------------------------------------------------- Console */
@@ -141,28 +200,6 @@
   }
   $("clearBtn").addEventListener("click", function () { out.innerHTML = ""; });
 
-  /* ---------------------------------------------------------------- State */
-  var state = { lab: null, results: null, running: false };
-
-  function prog(lab) { return SL.lab(TRACK, (lab || state.lab).id); }
-  function hintsUsed(p) {
-    var n = 0, h = p.hints || {};
-    for (var k in h) n += h[k];
-    return n;
-  }
-  function quizXP(p) {
-    var n = 0, q = p.quiz || {};
-    for (var k in q) if (q[k]) n += QUIZ_XP;
-    return n;
-  }
-  function labXP(lab, p) { return Math.max(lab.xp / 2, lab.xp - HINT_COST * hintsUsed(p)); }
-
-  function renderXP() {
-    var xp = SL.totalXP();
-    var r = SL.rank(xp);
-    $("xpBox").innerHTML = "rank <b>" + r.name + "</b> · <b>" + xp + "</b> XP";
-  }
-
   /* ---------------------------------------------------------------- Sidebar */
   function renderSide() {
     var done = SL.trackDone(TRACK);
@@ -173,13 +210,13 @@
       html += "<h4>Module " + m.n + " · " + m.name + "</h4>";
       LABS.filter(function (l) { return l.module === m.n; }).forEach(function (l) {
         var p = prog(l);
-        var cls = "lab" + (p.done ? " done" : p.started ? " started" : "") + (state.lab && state.lab.id === l.id ? " active" : "");
-        html += '<button class="' + cls + '" data-lab="' + l.id + '"><span class="dot">' + (p.done ? "✓" : "") +
+        var cls = "lab" + (l.capstone ? " cap" : "") + (p.done ? " done" : p.started ? " started" : "") + (state.lab && state.lab.id === l.id ? " active" : "");
+        html += '<button class="' + cls + '" data-lab="' + l.id + '"><span class="dot">' + (p.done ? "✓" : l.capstone ? "★" : "") +
           '</span><span class="nm">' + esc(l.title) + "<small>" + esc(l.topic) + "</small></span></button>";
       });
       T.UPCOMING.filter(function (l) { return l.module === m.n; }).forEach(function (l) {
-        html += '<div class="lab locked" title="Coming soon"><span class="dot"></span><span class="nm">' + esc(l.title) +
-          "<small>" + esc(l.topic) + " · soon</small></span></div>";
+        html += '<div class="lab locked' + (l.capstone ? " cap" : "") + '" title="Coming soon"><span class="dot">' + (l.capstone ? "★" : "") +
+          '</span><span class="nm">' + esc(l.title) + "<small>" + esc(l.topic) + " · soon</small></span></div>";
       });
     });
     $("side").innerHTML = html;
@@ -187,7 +224,8 @@
   $("side").addEventListener("click", function (e) {
     var b = e.target.closest("button[data-lab]");
     if (!b) return;
-    location.hash = b.getAttribute("data-lab");
+    if (location.hash.slice(1) === b.getAttribute("data-lab")) loadLab(b.getAttribute("data-lab"));
+    else location.hash = b.getAttribute("data-lab");
     document.body.classList.remove("nav-open");
   });
   $("menuBtn").addEventListener("click", function () {
@@ -199,7 +237,8 @@
   /* ---------------------------------------------------------------- Learn tab */
   function renderLearn(lab) {
     var el = $("panelLearn");
-    el.innerHTML = lab.learn + '<div class="next-step"><button class="btn primary" id="toTasks">Got it, show my tasks →</button></div>';
+    el.innerHTML = lab.learn + '<div class="next-step"><button class="btn primary" id="toTasks">' +
+      (lab.capstone ? "Start the project →" : "Got it, show my tasks →") + "</button></div>";
     Array.prototype.forEach.call(el.querySelectorAll("pre.ex"), function (pre) {
       var code = pre.textContent;
       pre.classList.add("cm-s-default");
@@ -219,11 +258,12 @@
   function isCode(h) { return /\n/.test(h) || /^(def |for |if |elif |else|while |print\(|[\w\[\], ]+ ?[+\-]?= )/.test(h); }
 
   function renderTasks() {
+    if (state.drill) return renderDrill();
     var lab = state.lab, p = prog(), passed = {};
     if (state.results) state.results.forEach(function (r) { passed[r.id] = r; });
     var html = "";
     if (p.done) {
-      html += '<div class="done-banner"><span>✓ Ticket closed · <b>' + (p.xp || 0) + ' XP</b> earned</span>' +
+      html += '<div class="done-banner"><span>✓ ' + (lab.capstone ? "Capstone complete" : "Ticket closed") + " · <b>" + labXP(lab, p) + " XP</b></span>" +
         '<button class="btn small" id="reviewBtn">Debrief &amp; quiz</button></div>';
     }
     html += '<ol class="objectives">';
@@ -251,25 +291,101 @@
       html += "</li>";
     });
     html += "</ol>";
-    html += '<p class="tasks-foot">' + (state.results ? "Checked on your last run." : "Press <b>Run</b> to check your code against these tasks.") +
-      " Hints cost " + HINT_COST + " XP each until the ticket is closed.</p>";
+
+    if (lab.capstone) {
+      html += '<div class="solbox"><h3 class="sub">Reference solution</h3>';
+      if (p.done || p.revealed) {
+        html += "<p>" + (p.done ? "Compare it with yours. There's more than one right way to solve this." : "Revealed. This capstone now earns half XP.") + "</p>" +
+          '<pre class="code" data-hl>' + esc(lab.solution) + '</pre><button class="btn small" id="copySol">Copy</button>';
+      } else {
+        html += "<p>Capstones have no hints. If you're really stuck, you can reveal the full solution, but the capstone then earns half XP (" + lab.xp / 2 + " instead of " + lab.xp + ").</p>" +
+          '<button class="btn small" id="revealSol">Reveal solution</button>';
+      }
+      html += "</div>";
+    } else {
+      html += '<p class="tasks-foot">' + (state.results ? "Checked on your last run." : "Press <b>Run</b> to check your code against these tasks.") +
+        " Hints cost " + HINT_COST + " XP each until the ticket is closed.</p>";
+      if (p.done && lab.solution) {
+        html += '<details class="ref"><summary>Compare with a reference solution</summary><pre class="code" data-hl>' + esc(lab.solution) + "</pre></details>";
+      }
+    }
+
+    if (lab.drills && lab.drills.length) {
+      var dp = p.drills || {};
+      var nd = 0;
+      lab.drills.forEach(function (d) { if (dp[d.id] && dp[d.id].done) nd++; });
+      html += '<h3 class="sub">Practice drills <span>optional · +' + DRILL_XP + " XP each · " + nd + "/" + lab.drills.length + " done</span></h3>" +
+        '<p class="tasks-foot" style="margin-top:0">Short extra exercises on the same idea. Repetition is what makes it stick.</p><div class="drills">';
+      lab.drills.forEach(function (d, i) {
+        var s = dp[d.id] || {};
+        html += '<button class="drill' + (s.done ? " done" : "") + '" data-drill="' + d.id + '"><span class="dot">' + (s.done ? "✓" : i + 1) +
+          '</span><span class="dn">' + esc(d.title) + "</span><span class=\"go\">" + (s.done ? "Redo" : "Start") + " →</span></button>";
+      });
+      html += "</div>";
+    }
+
     $("panelTasks").innerHTML = html;
+    highlight($("panelTasks"));
     var badge = $("taskBadge");
     badge.textContent = nPass + "/" + lab.objectives.length;
     badge.className = "badge" + (nPass === lab.objectives.length ? " all" : "");
     var rb = $("reviewBtn");
     if (rb) rb.addEventListener("click", function () { openModal(false); });
+    var cs = $("copySol");
+    if (cs) cs.addEventListener("click", function () { copyText(lab.solution, cs); });
+    var rv = $("revealSol");
+    if (rv) rv.addEventListener("click", function () {
+      if (!confirm("Reveal the full solution? This capstone will then earn half XP.")) return;
+      SL.setLab(TRACK, lab.id, { revealed: true, started: true });
+      saveXP(lab);
+      renderTasks();
+    });
   }
+
+  function renderDrill() {
+    var lab = state.lab, d = state.drill, p = prog();
+    var s = (p.drills || {})[d.id] || {};
+    var idx = lab.drills.indexOf(d);
+    var r = state.drillResult;
+    var html = '<div class="drill-banner">' +
+      '<div class="dh"><span class="pill amber">Drill ' + (idx + 1) + " of " + lab.drills.length + "</span><b>" + esc(d.title) + "</b>" +
+      (s.done ? '<span class="pill green">done</span>' : "") + "</div>" +
+      '<div class="dt">' + d.text + "</div>";
+    if (r) html += r.pass ? '<div class="dok">✓ Correct!' + (s.revealed ? " (solution was revealed, so no XP)" : " +" + DRILL_XP + " XP") + "</div>"
+      : '<div class="fb">' + esc(r.msg || "Not yet. Check the task and run again.") + "</div>";
+    html += '<div class="dbtns"><button class="btn small ghost" id="backTicket">← Back to the ticket</button>';
+    var next = lab.drills[idx + 1];
+    if (next && s.done) html += '<button class="btn small primary" data-drill="' + next.id + '">Next drill →</button>';
+    if (!s.revealed && !s.done) html += '<button class="btn small ghost" id="showDrillSol">Show solution (no XP)</button>';
+    html += "</div>";
+    if (s.revealed || s.done) html += '<pre class="code" data-hl>' + esc(d.solution) + "</pre>";
+    html += "</div>";
+    $("panelTasks").innerHTML = html;
+    highlight($("panelTasks"));
+    $("backTicket").addEventListener("click", exitDrill);
+    var sb = $("showDrillSol");
+    if (sb) sb.addEventListener("click", function () {
+      var dr = prog().drills || {};
+      dr[d.id] = Object.assign(dr[d.id] || {}, { revealed: true });
+      SL.setLab(TRACK, lab.id, { drills: dr });
+      renderDrill();
+    });
+  }
+
   $("panelTasks").addEventListener("click", function (e) {
     var b = e.target.closest("[data-hint]");
-    if (!b) return;
-    var id = b.getAttribute("data-hint");
-    var p = prog();
-    var hints = p.hints || {};
-    hints[id] = (hints[id] || 0) + 1;
-    SL.setLab(TRACK, state.lab.id, { hints: hints, started: true });
-    renderTasks();
-    renderSide();
+    if (b) {
+      var id = b.getAttribute("data-hint");
+      var p = prog();
+      var hints = p.hints || {};
+      hints[id] = (hints[id] || 0) + 1;
+      SL.setLab(TRACK, state.lab.id, { hints: hints, started: true });
+      renderTasks();
+      renderSide();
+      return;
+    }
+    var dEl = e.target.closest("[data-drill]");
+    if (dEl) loadDrill(dEl.getAttribute("data-drill"));
   });
 
   function showTab(name) {
@@ -282,25 +398,57 @@
   $("tabLearn").addEventListener("click", function () { showTab("learn"); });
   $("tabTasks").addEventListener("click", function () { showTab("tasks"); });
 
+  /* ---------------------------------------------------------------- Drills */
+  function loadDrill(id) {
+    var d = null;
+    state.lab.drills.forEach(function (x) { if (x.id === id) d = x; });
+    if (!d) return;
+    state.drill = d;
+    state.drillResult = null;
+    var saved = SL.getCode(TRACK, codeKey());
+    setEditor(saved != null ? saved : d.starter + "\n");
+    $("fname").textContent = "drill.py";
+    $("stdinBox").hidden = true;
+    out.innerHTML = "";
+    print("# Drill: " + d.title + ". Write your code above, then press Run.", "sys");
+    renderTasks();
+    showTab("tasks");
+    $("brief").scrollTop = 0;
+  }
+  function exitDrill() {
+    state.drill = null;
+    state.drillResult = null;
+    var lab = state.lab;
+    var saved = SL.getCode(TRACK, lab.id);
+    setEditor(saved != null ? saved : lab.starter + "\n");
+    $("fname").textContent = "main.py";
+    $("stdinBox").hidden = lab.stdin == null;
+    out.innerHTML = "";
+    print("# Back to " + lab.ticket + ". Press Run to re-check your tasks.", "sys");
+    renderTasks();
+  }
+
   /* ---------------------------------------------------------------- Load a lab */
   function loadLab(id) {
     var lab = labById(id) || firstOpenLab();
     state.lab = lab;
     state.results = null;
+    state.drill = null;
+    state.drillResult = null;
     var p = prog();
     document.title = lab.ticket + " " + lab.title + " · sudo learn";
-    $("tTicket").textContent = lab.ticket;
+    $("tTicket").textContent = lab.capstone ? "★ " + lab.ticket + " · CAPSTONE" : lab.ticket;
     $("tTopic").textContent = lab.topic;
     $("tTitle").textContent = lab.title;
     $("tFrom").textContent = lab.from;
     $("tStory").innerHTML = lab.story;
+    $("tabLearn").firstChild.textContent = lab.capstone ? "1 · Brief" : "1 · Learn";
+    $("fname").textContent = "main.py";
     renderLearn(lab);
     renderTasks();
     renderSide();
     var saved = SL.getCode(TRACK, lab.id);
-    editor.setValue(saved != null ? saved : lab.starter + "\n");
-    editor.clearHistory();
-    clearErrLine();
+    setEditor(saved != null ? saved : lab.starter + "\n");
     $("stdinBox").hidden = lab.stdin == null;
     $("stdin").value = lab.stdin || "";
     out.innerHTML = "";
@@ -318,8 +466,9 @@
 
   $("resetCode").addEventListener("click", function () {
     if (!confirm("Replace your code with the starter code?")) return;
-    editor.setValue(state.lab.starter + "\n");
-    SL.setCode(TRACK, state.lab.id, null);
+    var starter = state.drill ? state.drill.starter : state.lab.starter;
+    setEditor(starter + "\n");
+    SL.setCode(TRACK, codeKey(), null);
   });
 
   /* ---------------------------------------------------------------- Run */
@@ -333,21 +482,22 @@
 
   function runCode() {
     if (state.running || !runner.ready) return;
-    var lab = state.lab;
+    var lab = state.lab, d = state.drill;
     var code = editor.getValue();
-    SL.setCode(TRACK, lab.id, code);
+    SL.setCode(TRACK, codeKey(), code);
     state.running = true;
     $("runBtn").disabled = true;
     clearErrLine();
-    print("▶ python main.py", "run-sep");
+    print("▶ python " + (d ? "drill.py" : "main.py"), "run-sep");
+    var src = d || lab;
     var msg = {
       type: "run",
       code: code,
-      prelude: lab.prelude || "",
-      stdin: lab.stdin != null ? stdinLines() : [],
-      files: lab.files || {},
-      removeFiles: lab.removeFiles || [],
-      checks: lab.objectives.map(function (o) { return { id: o.id, code: o.check }; })
+      prelude: src.prelude || "",
+      stdin: !d && lab.stdin != null ? stdinLines() : [],
+      files: src.files || {},
+      removeFiles: src.removeFiles || [],
+      checks: d ? [{ id: d.id, code: d.check }] : lab.objectives.map(function (o) { return { id: o.id, code: o.check }; })
     };
     runner.call(msg, RUN_TIMEOUT).then(function (res) {
       state.running = false;
@@ -368,7 +518,9 @@
       } else if (!res.out) {
         print("(no output)", "sys");
       }
-      afterRun(res.results || []);
+      if (state.drill !== d || state.lab !== lab) return; // switched away while running
+      if (d) afterDrill(res.results || []);
+      else afterRun(res.results || []);
     });
   }
   $("runBtn").addEventListener("click", runCode);
@@ -389,17 +541,35 @@
     if (n === total && !p.done) complete();
   }
 
+  function afterDrill(results) {
+    var lab = state.lab, d = state.drill;
+    var r = results[0] || { pass: false, msg: "" };
+    state.drillResult = r;
+    if (r.pass) {
+      var dr = prog().drills || {};
+      dr[d.id] = Object.assign(dr[d.id] || {}, { done: true });
+      SL.setLab(TRACK, lab.id, { drills: dr, started: true });
+      saveXP(lab);
+      print("✓ Drill complete", "ok");
+    } else {
+      print("• Not yet. See the feedback above the code.", "sys");
+    }
+    renderTasks();
+    showTab("tasks");
+    renderSide();
+  }
+
   /* ---------------------------------------------------------------- REPL */
   var replHist = [], replPos = 0;
   function runRepl(code) {
     var lines = code.replace(/\n+$/, "").split("\n");
     lines.forEach(function (l, i) {
-      var d = print(l, i === 0 ? "in" : "in cont");
-      if (i > 0) d.textContent = "... " + l, d.className = "sys";
+      if (i === 0) print(l, "in");
+      else print("... " + l, "sys");
     });
     if (!runner.ready) { print("Python is still loading. Try again in a moment.", "sys"); return; }
-    var lab = state.lab;
-    runner.call({ type: "repl", code: code, files: lab.files || {}, removeFiles: lab.removeFiles || [] }, RUN_TIMEOUT).then(function (res) {
+    var src = state.drill || state.lab;
+    runner.call({ type: "repl", code: code, files: src.files || {}, removeFiles: src.removeFiles || [] }, RUN_TIMEOUT).then(function (res) {
       if (res.timeout) { print("⏱ Stopped after " + RUN_TIMEOUT / 1000 + " seconds (infinite loop?).", "err"); return; }
       if (res.internal) { print("Internal error: " + res.internal, "err"); return; }
       if (res.out) print(res.out.replace(/\n$/, ""));
@@ -427,10 +597,9 @@
 
   /* ---------------------------------------------------------------- Completion */
   function complete() {
-    var lab = state.lab, p = prog();
-    var xp = labXP(lab, p) + quizXP(p);
-    SL.setLab(TRACK, lab.id, { done: true, xp: xp, doneAt: Date.now() });
-    renderXP();
+    var lab = state.lab;
+    SL.setLab(TRACK, lab.id, { done: true, doneAt: Date.now() });
+    saveXP(lab);
     renderSide();
     renderTasks();
     setTimeout(function () { openModal(true); }, 350);
@@ -441,8 +610,19 @@
     return LABS[i + 1] || null;
   }
 
+  function xpLine(lab, p) {
+    var extra = "";
+    if (lab.capstone) extra = p.revealed ? "(solution revealed)" : "· solved on your own";
+    else {
+      var used = hintsUsed(p);
+      extra = used ? "(" + used + " hint" + (used > 1 ? "s" : "") + " used)" : "· no hints used";
+    }
+    return "+" + labXP(lab, p) + " XP <span>" + extra + "</span>" + (quizXP(p) ? " +" + quizXP(p) + " quiz XP" : "");
+  }
+
   function openModal(fresh) {
     var lab = state.lab, p = prog();
+    $("mStamp").textContent = lab.capstone ? "CAPSTONE COMPLETE" : "TICKET CLOSED";
     $("mTitle").textContent = lab.ticket + " · " + lab.title;
     $("mXP").innerHTML = xpLine(lab, p);
     $("mDebrief").innerHTML = lab.debrief;
@@ -454,11 +634,6 @@
     $("modal").hidden = false;
     $("modal").querySelector(".dialog").scrollTop = 0;
     if (fresh) $("mNext").focus();
-  }
-  function xpLine(lab, p) {
-    var used = hintsUsed(p);
-    return "+" + labXP(lab, p) + " XP <span>" + (used ? "(" + used + " hint" + (used > 1 ? "s" : "") + " used)" : "· no hints used") + "</span>" +
-      (quizXP(p) ? " +" + quizXP(p) + " quiz XP" : "");
   }
   function closeModal() { $("modal").hidden = true; }
   $("mStay").addEventListener("click", closeModal);
@@ -474,6 +649,7 @@
   function renderQuiz(lab) {
     var p = prog();
     var answers = p.quiz || {};
+    if (!lab.quiz || !lab.quiz.length) { $("mQuiz").innerHTML = ""; return; }
     var html = "<h3>Quick check</h3><p class=\"qhint\">+" + QUIZ_XP + " XP for each one you get right on the first try.</p>";
     lab.quiz.forEach(function (q, qi) {
       var answered = answers.hasOwnProperty(qi);
@@ -494,12 +670,11 @@
     var q = state.lab.quiz[qi];
     var oi = +b.getAttribute("data-o");
     var right = oi === q.answer;
-    var p = prog();
-    var quiz = p.quiz || {};
+    var quiz = prog().quiz || {};
     if (!quiz.hasOwnProperty(qi)) {
       quiz[qi] = right;
-      var add = right ? QUIZ_XP : 0;
-      SL.setLab(TRACK, state.lab.id, { quiz: quiz, xp: (p.xp || 0) + add });
+      SL.setLab(TRACK, state.lab.id, { quiz: quiz });
+      saveXP(state.lab);
     }
     Array.prototype.forEach.call(qEl.querySelectorAll("button"), function (x, i) {
       x.disabled = true;
@@ -511,7 +686,6 @@
     why.textContent = (right ? "Correct. " : "Not quite. ") + q.why;
     qEl.appendChild(why);
     $("mXP").innerHTML = xpLine(state.lab, prog());
-    renderXP();
     renderTasks();
   });
 

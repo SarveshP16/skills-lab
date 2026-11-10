@@ -143,6 +143,70 @@ class H:
                         ". Build the answer from the data instead of typing it in.")
         return True
 
+    # ---- One-line checks used by practice drills ----
+
+    @staticmethod
+    def vars(ns, src, run, wants, alts=()):
+        """Variables must have these values; each alt re-runs with changed data: (pattern, repl, wants, label)."""
+        for k, v in wants.items():
+            r = H.expect(ns, k, v)
+            if r is not True:
+                return r
+        for pattern, repl, want2, label in alts:
+            r = H.alt(src, run, pattern, repl, want2, label)
+            if r is not True:
+                return r
+        return True
+
+    @staticmethod
+    def func(ns, name, cases):
+        """Call function NAME with each (args_tuple, expected) case."""
+        f = H.fn(ns, name)
+        if not f:
+            return "I can't find a function called " + name + "."
+        for args, want in cases:
+            ok, got = H.call(f, *args)
+            call = name + "(" + ", ".join(repr(a) for a in args) + ")"
+            if not ok:
+                return call + " crashed: " + type(got).__name__ + ": " + str(got)
+            if got is None and want is not None:
+                return call + " returned None. Use return, not print."
+            if got != want or (type(want) is bool) != (type(got) is bool):
+                return call + " returned " + _short(got) + ", expected " + _short(want) + "."
+        return True
+
+    @staticmethod
+    def printed(out, want):
+        """The printed lines must be exactly WANT."""
+        got = H.lines(out)
+        if got != want:
+            if not got:
+                return "Nothing was printed. Expected:\n  " + "\n  ".join(want)
+            return "Expected:\n  " + "\n  ".join(want) + "\nYou printed:\n  " + "\n  ".join(got[:8])
+        return True
+
+    @staticmethod
+    def values(src, run, pattern, fmt, cases, var=None):
+        """Swap each test value into the line matching PATTERN and re-run.
+        Compares variable VAR if given, otherwise the printed output (one line)."""
+        for value, want in cases:
+            line = fmt % (value,)
+            new = H.sub(src, pattern, line)
+            if new is None:
+                return "Keep the line that sets the starting value, so I can test other values."
+            n, o, e = run(new)
+            if e:
+                return "With " + line + " your code crashed: " + e[0].splitlines()[-1]
+            if var:
+                got = n.get(var, "(missing)")
+                if got != want:
+                    return "With " + line + ", " + var + " should be " + _short(want) + " but it's " + _short(got) + "."
+            else:
+                got = H.lines(o)
+                if got != [want]:
+                    return "With " + line + " expected only " + _short(want) + " to be printed, got " + (_short(got) if got else "nothing") + "."
+        return True
+
 
 def _sl_run(src, prelude, stdin_json, checks_json):
     stdin = json.loads(stdin_json)

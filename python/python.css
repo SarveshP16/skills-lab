@@ -209,3 +209,30 @@ pre.ex .try:hover { border-color: var(--green); }
 @media (max-width: 820px) {
   .jump { display: block; position: fixed; right: 16px; bottom: 16px; z-index: 35; font: 600 13px var(--font-sans); background: var(--green); color: #05230f; border: 0; border-radius: 999px; padding: 10px 16px; box-shadow: var(--shadow); cursor: pointer; }
 }
+
+/* Capstones, reference solutions, drills */
+.lab.cap .dot { border-color: #ffd43b; color: #ffd43b; font-size: 10px; }
+.lab.cap.done .dot { background: var(--green); border-color: var(--green); color: #05230f; }
+h3.sub { font-family: var(--font-display); font-weight: 800; font-size: 17px; margin: 26px 0 6px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+h3.sub span { font: 500 12px var(--font-mono); color: var(--dim); }
+.solbox { margin-top: 18px; border: 1px dashed var(--line-2); border-radius: 10px; padding: 4px 14px 14px; }
+.solbox h3.sub { margin-top: 12px; }
+.solbox p { font-size: 14px; }
+details.ref { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--panel); }
+details.ref summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--blue); }
+.drills { display: flex; flex-direction: column; gap: 6px; }
+.drill { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+.drill:hover { border-color: var(--dim); }
+.drill .dot { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line-2); display: grid; place-items: center; font: 600 11px var(--font-mono); color: var(--muted); flex-shrink: 0; }
+.drill.done .dot { background: var(--green); border-color: var(--green); color: #05230f; }
+.drill .dn { flex: 1; }
+.drill .go { font: 600 12px var(--font-sans); color: var(--green); white-space: nowrap; }
+.drill-banner { border: 1px solid rgba(251,191,36,.35); background: var(--panel); border-radius: 10px; padding: 14px; }
+.drill-banner .dh { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.drill-banner .dh b { font-family: var(--font-display); font-size: 18px; }
+.drill-banner .dt { color: var(--text-2); font-size: 14.5px; }
+.drill-banner .dt p { margin: 0 0 8px; }
+.drill-banner .fb { font: 500 12.5px/1.5 var(--font-mono); color: var(--red); background: var(--red-bg); border-radius: 6px; padding: 7px 10px; white-space: pre-wrap; margin-top: 10px; }
+.drill-banner .dok { font-weight: 600; color: var(--green); background: var(--green-bg); border-radius: 6px; padding: 7px 10px; margin-top: 10px; }
+.drill-banner .dbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.drill-banner code { font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
