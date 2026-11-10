@@ -19,6 +19,9 @@
   var HINT_COST = 10;
   var QUIZ_XP = 10;
   var DRILL_XP = 5;
+  // Terminal-first tracks (Linux): no editor; the commands typed at the prompt are the "code", replayed on each Enter.
+  var TERM = !!CFG.terminal;
+  if (TERM) document.body.classList.add("term-mode");
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -194,7 +197,14 @@
   function print(text, cls) {
     var d = document.createElement("div");
     if (cls) d.className = cls;
-    d.textContent = text;
+    var k = cls === "cmd" ? text.indexOf("\u0001") : -1;
+    if (k >= 0) {
+      var sp = document.createElement("span");
+      sp.className = "p";
+      sp.textContent = text.slice(0, k) + " ";
+      d.appendChild(sp);
+      d.appendChild(document.createTextNode(text.slice(k + 1)));
+    } else d.textContent = text;
     out.appendChild(d);
     out.scrollTop = out.scrollHeight;
     return d;
@@ -276,9 +286,15 @@
       var b = document.createElement("button");
       b.className = "try";
       b.type = "button";
-      b.textContent = "▶ try";
-      b.title = "Run this in the console";
-      b.addEventListener("click", function () { runRepl(code); });
+      b.textContent = TERM ? "▶ type it" : "▶ try";
+      b.title = TERM ? "Put this command at the prompt (then press Enter)" : "Run this in the console";
+      b.addEventListener("click", function () {
+        if (!TERM) { runRepl(code); return; }
+        var inp = $("repl");
+        inp.value = code.replace(/\n+$/, "");
+        inp.focus();
+        if (window.innerWidth <= 820) document.querySelector(".console").scrollIntoView({ behavior: "smooth" });
+      });
       pre.appendChild(b);
     });
     $("toTasks").addEventListener("click", function () { showTab("tasks"); $("brief").scrollTop = 0; });
@@ -333,7 +349,7 @@
       }
       html += "</div>";
     } else {
-      html += '<p class="tasks-foot">' + (state.results ? "Checked on your last run." : "Press <b>Run</b> to check your code against these tasks.") +
+      html += '<p class="tasks-foot">' + (TERM ? "Type commands in the terminal: your tasks are checked after every command." : state.results ? "Checked on your last run." : "Press <b>Run</b> to check your code against these tasks.") +
         " Hints cost " + HINT_COST + " XP each until the ticket is closed.</p>";
       if (p.done && lab.solution) {
         html += '<details class="ref"><summary>Compare with a reference solution</summary><pre class="code" data-hl>' + esc(lab.solution) + "</pre></details>";
@@ -441,7 +457,8 @@
     $("stdinBox").hidden = true;
     setProcessBoxes(d, DRILL_FILE);
     out.innerHTML = "";
-    print("# Drill: " + d.title + ". Write your code above, then press Run.", "sys");
+    if (TERM) termLoad();
+    else print("# Drill: " + d.title + ". Write your code above, then press Run.", "sys");
     renderTasks();
     showTab("tasks");
     $("brief").scrollTop = 0;
@@ -456,7 +473,8 @@
     $("stdinBox").hidden = lab.stdin == null;
     setProcessBoxes(lab, FILE);
     out.innerHTML = "";
-    print("# Back to " + lab.ticket + ". Press Run to re-check your tasks.", "sys");
+    if (TERM) termLoad();
+    else print("# Back to " + lab.ticket + ". Press Run to re-check your tasks.", "sys");
     renderTasks();
   }
 
@@ -485,7 +503,8 @@
     $("stdin").value = lab.stdin || "";
     setProcessBoxes(lab, FILE);
     out.innerHTML = "";
-    print("# " + lab.ticket + " · " + lab.title + (/[.?!]$/.test(lab.title) ? "" : ".") + " Write your code above, then press Run.", "sys");
+    if (TERM) termLoad();
+    else print("# " + lab.ticket + " · " + lab.title + (/[.?!]$/.test(lab.title) ? "" : ".") + " Write your code above, then press Run.", "sys");
     showTab(p.started || p.done ? "tasks" : "learn");
     $("brief").scrollTop = 0;
     closeModal();
@@ -498,6 +517,14 @@
   window.addEventListener("hashchange", route);
 
   $("resetCode").addEventListener("click", function () {
+    if (TERM) {
+      if (!confirm("Start over on a fresh copy of the server? The commands you typed for this " + (state.drill ? "drill" : "ticket") + " are cleared.")) return;
+      SL.setCode(TRACK, codeKey(), null);
+      if (state.drill) state.drillResult = null; else state.results = null;
+      renderTasks();
+      termLoad();
+      return;
+    }
     if (!confirm("Replace your code with the starter code?")) return;
     var starter = state.drill ? state.drill.starter : state.lab.starter;
     setEditor(starter + "\n");
@@ -647,6 +674,15 @@
     e.preventDefault();
     var input = $("repl");
     var code = input.value;
+    if (TERM) {
+      input.value = "";
+      if (!code.trim()) { if (!state.running) print(promptText + "\u0001", "cmd"); return; }
+      replHist.push(code);
+      replPos = replHist.length;
+      termQueue.push(code);
+      if (!state.running) termNext();
+      return;
+    }
     if (!code.trim()) return;
     replHist.push(code);
     replPos = replHist.length;
@@ -654,6 +690,17 @@
     runRepl(code);
   });
   $("repl").addEventListener("keydown", function (e) {
+    if (TERM && e.key === "Tab") {
+      e.preventDefault();
+      var inp = this, src = state.drill || state.lab;
+      runner.call({ type: "complete", code: termHist, line: inp.value, files: src.files || {}, prelude: src.prelude || "" }).then(function (res) {
+        if (res.line !== undefined) inp.value = res.line;
+        if (res.options && res.options.length) print(res.options.join("   "), "sys");
+      });
+      return;
+    }
+    if (TERM && e.key === "l" && e.ctrlKey) { e.preventDefault(); out.innerHTML = ""; return; }
+    if (TERM && e.key === "c" && e.ctrlKey && !window.getSelection().toString()) { e.preventDefault(); print(promptText + "\u0001" + this.value + "^C", "cmd"); this.value = ""; return; }
     if (e.key === "ArrowUp" && replPos > 0) { replPos--; this.value = replHist[replPos]; e.preventDefault(); }
     else if (e.key === "ArrowDown") {
       if (replPos < replHist.length - 1) { replPos++; this.value = replHist[replPos]; }
@@ -661,6 +708,85 @@
       e.preventDefault();
     }
   });
+
+  /* ---------------------------------------------------------------- Terminal-first mode */
+  var termHist = "", promptText = "dev@kc-web-01:~$", termQueue = [];
+  // Commands typed while the previous one is still being checked wait their turn.
+  function termNext() {
+    if (!termQueue.length) return;
+    var code = termQueue.shift();
+    termHist = termHist ? termHist + "\n" + code : code;
+    SL.setCode(TRACK, codeKey(), termHist);
+    termCall(termCount() - 1, false).then(function () { if (termQueue.length) termNext(); });
+  }
+  function termCount() { return termHist.split("\n").filter(function (l) { return l.trim() !== ""; }).length; }
+  function setPrompt(p) { promptText = p || promptText; var el = document.querySelector("#replForm .ps"); if (el) el.textContent = promptText; }
+  function termLoad() {
+    var saved = SL.getCode(TRACK, codeKey());
+    termHist = saved || "";
+    termQueue = [];
+    replHist = termHist ? termHist.split("\n").filter(function (l) { return l.trim(); }) : [];
+    replPos = replHist.length;
+    out.innerHTML = "";
+    var d = state.drill, lab = state.lab;
+    print("# " + (d ? "Drill: " + d.title : lab.ticket + " · " + lab.title) + ". Type commands at the prompt below; your tasks are checked after each one. Tab completes names; ↑ recalls commands.", "sys");
+    setPrompt("dev@kc-web-01:~$");
+    if (!termHist.trim()) return;
+    print("# Your machine was restored from the " + termCount() + " command" + (termCount() === 1 ? "" : "s") + " you typed (Reset machine starts over).", "sys");
+    termCall(0, true);
+  }
+  function termCall(printFrom, quiet) {
+    var lab = state.lab, d = state.drill, src = d || lab;
+    var msg = { type: "run", code: termHist, printFrom: printFrom, files: src.files || {}, prelude: src.prelude || "",
+      checks: d ? [{ id: d.id, code: d.check }] : lab.objectives.map(function (o) { return { id: o.id, code: o.check }; }) };
+    state.running = true;
+    return runner.call(msg).then(function (res) {
+      state.running = false;
+      if (res.internal) { print("Internal error: " + res.internal, "err"); return; }
+      if (res.clear) out.innerHTML = "";
+      (res.parts || []).forEach(function (pt) { print(pt.text, pt.cls); });
+      setPrompt(res.prompt);
+      if (state.drill !== d || state.lab !== lab) return;
+      if (d) termAfterDrill(res.results || [], quiet);
+      else termAfterRun(res.results || [], quiet);
+    });
+  }
+  function termAfterRun(results, quiet) {
+    var lab = state.lab, p = prog();
+    var was = {};
+    (state.results || []).forEach(function (r) { was[r.id] = r.pass; });
+    (p.passed || []).forEach(function (id) { if (state.results === null) was[id] = true; });
+    state.results = results;
+    var passedNow = results.filter(function (r) { return r.pass; }).map(function (r) { return r.id; });
+    var passed = (p.passed || []).slice();
+    passedNow.forEach(function (id) { if (passed.indexOf(id) < 0) passed.push(id); });
+    SL.setLab(TRACK, lab.id, { started: true, passed: passed });
+    var fresh = [];
+    results.forEach(function (r, i) { if (r.pass && !was[r.id]) fresh.push(i + 1); });
+    var all = passedNow.length === lab.objectives.length;
+    if (!quiet) fresh.forEach(function (n) { print("✓ Task " + n + " done", "ok"); });
+    if (all && !p.done) { print("✓ All " + lab.objectives.length + " tasks done", "ok"); }
+    renderTasks();
+    renderSide();
+    if (fresh.length && !quiet) showTab("tasks");
+    if (all && !p.done) complete();
+  }
+  function termAfterDrill(results, quiet) {
+    var lab = state.lab, d = state.drill;
+    var r = results[0] || { pass: false, msg: "" };
+    var was = state.drillResult && state.drillResult.pass;
+    state.drillResult = r;
+    if (r.pass && !was) {
+      var dr = prog().drills || {};
+      var already = dr[d.id] && dr[d.id].done;
+      dr[d.id] = Object.assign(dr[d.id] || {}, { done: true });
+      SL.setLab(TRACK, lab.id, { drills: dr, started: true });
+      saveXP(lab);
+      if (!quiet || !already) print("✓ Drill complete", "ok");
+    }
+    renderTasks();
+    renderSide();
+  }
 
   /* ---------------------------------------------------------------- Completion */
   function complete() {
@@ -766,7 +892,7 @@
   if ("IntersectionObserver" in window) {
     new IntersectionObserver(function (entries) {
       codeVisible = entries[0].isIntersecting;
-      $("jumpBtn").textContent = codeVisible ? "Tasks ↑" : "Code ↓";
+      $("jumpBtn").textContent = codeVisible ? "Tasks ↑" : TERM ? "Terminal ↓" : "Code ↓";
     }, { threshold: 0.15 }).observe(document.querySelector(".work"));
   }
   $("jumpBtn").addEventListener("click", function () {

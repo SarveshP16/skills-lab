@@ -10,7 +10,7 @@ Hands-on labs for learning Python, PowerShell, Linux, Git & GitHub, Networking, 
 |---|-------|--------|
 | 1 | Python | Complete: 4 modules, 32 labs, 4 capstone projects and 99 practice drills |
 | 2 | PowerShell | Complete: 32 labs, 4 capstone projects and 108 practice drills, on a simulated PowerShell 7 (with simulated Windows GUI windows, scripts run like programs, Pester and PSScriptAnalyzer) |
-| 3 | Linux | planned |
+| 3 | Linux | Module 1 open: 9 labs, a capstone project and 30 practice drills (36 labs planned), typed into a simulated Bash terminal on an Ubuntu 24.04 server |
 | 4 | Git & GitHub | planned |
 | 5 | Networking | planned |
 | 6 | DevOps | planned |
@@ -35,7 +35,11 @@ Then open http://localhost:8770/. Opening the HTML files straight from disk won'
 ```
 index.html            home page: track picker, rank and XP
 assets/css/base.css   shared colours, fonts and buttons
+assets/css/lab.css    shared lab page layout (editor, console, terminal mode)
 assets/js/progress.js shared progress store and track catalogue
-python/               Python track (page, UI, Pyodide worker, lab content per module)
+assets/js/lab-app.js  shared lab page logic (tasks, hints, drills, XP; editor or terminal mode)
+python/               Python track (Pyodide worker, lab content per module)
+powershell/           PowerShell track (simulated PowerShell 7, Windows system and GUI windows, labs)
+linux/                Linux track (simulated Bash on an Ubuntu server, terminal-first labs)
 prototype/night-shift the earlier Linux/Networking/DevOps prototype, to be reused by later tracks
 ```

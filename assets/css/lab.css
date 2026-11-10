@@ -254,3 +254,19 @@ details.ref summary { cursor: pointer; font-weight: 600; font-size: 14px; color:
 .drill-banner .dok { font-weight: 600; color: var(--green); background: var(--green-bg); border-radius: 6px; padding: 7px 10px; margin-top: 10px; }
 .drill-banner .dbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .drill-banner code { font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+
+/* Terminal-first labs (LAB_CONFIG.terminal, the Linux track): the console is the whole work area. */
+.term-mode .work { grid-template-rows: auto minmax(0, 1fr); }
+.term-mode .editor-wrap, .term-mode #runBtn, .term-mode .io { display: none; }
+.term-mode .console { border-top: 0; }
+.term-mode .console .out { font-size: 13.5px; }
+.term-mode .repl { padding: 8px 12px 12px; }
+.term-mode .repl .ps { font-weight: 700; white-space: nowrap; }
+.out .cmd { color: var(--text); }
+.out .cmd .p { color: var(--green); font-weight: 600; }
+.term-mode .objective:not(.pass) .fb { color: var(--muted); background: none; border-left: 2px solid var(--line-2); border-radius: 0; padding: 2px 10px; }
+@media (max-width: 820px) {
+  .term-mode .console { height: 70vh; min-height: 360px; }
+  .term-mode .repl .ps { max-width: 45vw; overflow: hidden; text-overflow: ellipsis; }
+  .term-mode .repl { padding-right: 104px; }
+}
