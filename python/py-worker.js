@@ -7,7 +7,7 @@ var PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.2/full/";
 importScripts(PYODIDE_URL + "pyodide.js");
 
 var HARNESS = String.raw`
-import sys, io, json, re, traceback, builtins, contextlib, linecache
+import sys, io, os, json, re, shlex, traceback, builtins, contextlib, linecache
 
 _SL = {"ns": {"__name__": "__main__"}}
 _REAL_INPUT = builtins.input
@@ -73,21 +73,54 @@ def _make_input(queue):
     return _input
 
 
-def _exec_user(src, prelude, stdin):
+_BASE_ENV = dict(os.environ)
+
+
+def _set_process(opts):
+    """Set sys.argv and os.environ the way a terminal would for: NAME=value python main.py ARGS."""
+    opts = opts or {}
+    try:
+        args = shlex.split(opts.get("argv") or "")
+    except ValueError:
+        args = (opts.get("argv") or "").split()
+    sys.argv = [opts.get("script") or "main.py"] + args
+    os.environ.clear()
+    os.environ.update(_BASE_ENV)
+    os.environ.update({str(k): str(v) for k, v in (opts.get("env") or {}).items()})
+
+
+def _exit_code(e):
+    """Exit status for SystemExit, like the real interpreter: None -> 0, int -> int, anything else is printed -> 1."""
+    if e.code is None:
+        return 0
+    if isinstance(e.code, int):
+        return e.code
+    print(e.code, file=sys.stderr)
+    return 1
+
+
+def _exec_user(src, prelude, stdin, opts=None):
     ns = {"__name__": "__main__"}
     buf = io.StringIO()
     err = None
+    code = 0
+    exited = False
     builtins.input = _make_input(list(stdin or []))
+    _set_process(opts)
     _remember("<your code>", src)
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
         try:
             if prelude:
                 exec(compile(prelude, "<prelude>", "exec"), ns)
             exec(compile(src, "<your code>", "exec"), ns)
-        except SystemExit:
-            pass
+        except SystemExit as e:
+            exited = True
+            code = _exit_code(e)
         except BaseException as e:
             err = _fmt_exc(e)
+            code = 1
+    ns["__exit_code__"] = code
+    ns["__exited__"] = exited
     return ns, buf.getvalue(), err
 
 
@@ -208,14 +241,23 @@ class H:
         return True
 
 
-def _sl_run(src, prelude, stdin_json, checks_json):
+def _sl_run(src, prelude, stdin_json, checks_json, opts_json="{}"):
     stdin = json.loads(stdin_json)
     checks = json.loads(checks_json)
-    ns, out, err = _exec_user(src, prelude, stdin)
+    opts = json.loads(opts_json or "{}")
+    ns, out, err = _exec_user(src, prelude, stdin, opts)
     _SL["ns"] = ns
+    _SL["prelude"] = prelude
+    exit_info = {"code": ns["__exit_code__"], "exited": ns["__exited__"]}
 
-    def run(code=None, stdin=None):
-        return _exec_user(src if code is None else code, prelude, stdin or [])
+    def run(code=None, stdin=None, argv=None, env=None):
+        """Re-run the learner's code. argv (a string) and env (a dict) replace the lab's own when given."""
+        o = dict(opts)
+        if argv is not None:
+            o["argv"] = argv
+        if env is not None:
+            o["env"] = env
+        return _exec_user(src if code is None else code, prelude, stdin or [], o)
 
     results = []
     for c in checks:
@@ -231,14 +273,16 @@ def _sl_run(src, prelude, stdin_json, checks_json):
         except Exception as e:
             results.append({"id": c["id"], "pass": False, "msg": "Couldn't check this yet (" + type(e).__name__ + ": " + str(e) + ")"})
     builtins.input = _make_input([])
+    _set_process(opts)  # the console keeps the same argv and environment as the Run
     return json.dumps({
         "out": _limit(out),
         "error": None if err is None else {"text": err[0], "type": err[1], "line": err[2]},
+        "exit": exit_info,
         "results": results,
     })
 
 
-def _sl_repl(src):
+def _sl_repl(src, prelude=""):
     ns = _SL["ns"]
     buf = io.StringIO()
     err = None
@@ -246,6 +290,10 @@ def _sl_repl(src):
     _remember("<console>", src)
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
         try:
+            if prelude and _SL.get("prelude") != prelude:
+                # e.g. the lab's simulated requests module, so Learn-tab examples work before the first Run
+                exec(compile(prelude, "<prelude>", "exec"), ns)
+                _SL["prelude"] = prelude
             try:
                 code = compile(src, "<console>", "eval")
             except SyntaxError:
@@ -324,14 +372,15 @@ onmessage = async function (e) {
         (msg.checks || []).map(function (c) { return c.code; }).join("\n"), msg.id);
       writeFiles(msg.files, msg.removeFiles);
       var fn = py.globals.get("_sl_run");
-      var res = fn(msg.code, msg.prelude || "", JSON.stringify(msg.stdin || []), JSON.stringify(msg.checks || []));
+      var res = fn(msg.code, msg.prelude || "", JSON.stringify(msg.stdin || []), JSON.stringify(msg.checks || []),
+        JSON.stringify({ argv: msg.argv || "", env: msg.env || {}, script: msg.script || "main.py" }));
       fn.destroy();
       postMessage({ type: "result", id: msg.id, data: JSON.parse(res) });
     } else if (msg.type === "repl") {
       await ensurePackages(msg.code, msg.id);
       writeFiles(msg.files, msg.removeFiles);
       var r = py.globals.get("_sl_repl");
-      var out = r(msg.code);
+      var out = r(msg.code, msg.prelude || "");
       r.destroy();
       postMessage({ type: "result", id: msg.id, data: JSON.parse(out) });
     }

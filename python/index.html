@@ -50,9 +50,19 @@
       <button class="btn small primary" id="runBtn" disabled>▶ Run <kbd>Ctrl ↵</kbd></button>
     </div>
     <div class="editor-wrap"><textarea id="code" aria-label="Python code editor"></textarea></div>
+    <div class="io">
     <div class="stdin" id="stdinBox" hidden>
       <label for="stdin">Input <span>one line per <code>input()</code> call</span></label>
       <textarea id="stdin" rows="2" spellcheck="false"></textarea>
+    </div>
+    <div class="stdin" id="argsBox" hidden>
+      <label for="args">Arguments <span>what you'd type after the script name in a terminal</span></label>
+      <div class="argrow"><span class="argcmd">$ python <b id="argScript">main.py</b></span><input id="args" spellcheck="false" autocomplete="off"></div>
+    </div>
+    <div class="stdin" id="envBox" hidden>
+      <label for="env">Environment <span>one NAME=value per line</span></label>
+      <textarea id="env" rows="2" spellcheck="false"></textarea>
+    </div>
     </div>
     <div class="console">
       <div class="console-head"><span>Console</span><button class="link" id="clearBtn">clear</button></div>
@@ -90,6 +100,8 @@
 <script src="labs.js"></script>
 <script src="drills.js"></script>
 <script src="labs-m2.js"></script>
+<script src="labs-m3.js"></script>
+<script src="drills-m3.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

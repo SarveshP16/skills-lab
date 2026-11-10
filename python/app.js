@@ -203,7 +203,11 @@
     FileNotFoundError: "That file doesn't exist, or the path is wrong.",
     EOFError: "input() wanted a value, but the Input box ran out of lines. Add a line there.",
     UnboundLocalError: "A variable was used inside a function before it was given a value there.",
-    RecursionError: "A function kept calling itself without ever stopping."
+    RecursionError: "A function kept calling itself without ever stopping.",
+    HTTPError: "The server answered with an error status (4xx or 5xx). raise_for_status() turned it into this exception. Check the URL, and send the Authorization header.",
+    ConnectionError: "The request never reached a server. Check the host name in the URL.",
+    AssertionError: "An assert statement was False. In a test, that means the code under test didn't do what the test expected.",
+    UnicodeDecodeError: "These bytes aren't text. Open the file in binary mode (\"rb\") if you only need its bytes, e.g. to hash it."
   };
   function printError(err) {
     print(err.text, "err");
@@ -421,6 +425,7 @@
     setEditor(saved != null ? saved : d.starter + "\n");
     $("fname").textContent = "drill.py";
     $("stdinBox").hidden = true;
+    setProcessBoxes(d, "drill.py");
     out.innerHTML = "";
     print("# Drill: " + d.title + ". Write your code above, then press Run.", "sys");
     renderTasks();
@@ -435,6 +440,7 @@
     setEditor(saved != null ? saved : lab.starter + "\n");
     $("fname").textContent = "main.py";
     $("stdinBox").hidden = lab.stdin == null;
+    setProcessBoxes(lab, "main.py");
     out.innerHTML = "";
     print("# Back to " + lab.ticket + ". Press Run to re-check your tasks.", "sys");
     renderTasks();
@@ -463,6 +469,7 @@
     setEditor(saved != null ? saved : lab.starter + "\n");
     $("stdinBox").hidden = lab.stdin == null;
     $("stdin").value = lab.stdin || "";
+    setProcessBoxes(lab, "main.py");
     out.innerHTML = "";
     print("# " + lab.ticket + " · " + lab.title + ". Write your code above, then press Run.", "sys");
     showTab(p.started || p.done ? "tasks" : "learn");
@@ -484,6 +491,24 @@
   });
 
   /* ---------------------------------------------------------------- Run */
+  // Labs and drills can set argv (a string, shown in the Arguments box) and env (an object, shown in the
+  // Environment box). The learner can edit both before pressing Run, like typing in a terminal.
+  function setProcessBoxes(src, script) {
+    $("argScript").textContent = script;
+    $("argsBox").hidden = src.argv == null;
+    $("args").value = src.argv || "";
+    $("envBox").hidden = src.env == null;
+    $("env").value = Object.keys(src.env || {}).map(function (k) { return k + "=" + src.env[k]; }).join("\n");
+  }
+  function envVars() {
+    var env = {};
+    $("env").value.replace(/\r/g, "").split("\n").forEach(function (line) {
+      var i = line.indexOf("=");
+      var name = (i < 0 ? line : line.slice(0, i)).trim();
+      if (name) env[name] = i < 0 ? "" : line.slice(i + 1);
+    });
+    return env;
+  }
   function stdinLines() {
     var v = $("stdin").value.replace(/\r/g, "");
     if (!v) return [];
@@ -500,12 +525,17 @@
     state.running = true;
     $("runBtn").disabled = true;
     clearErrLine();
-    print("▶ python " + (d ? "drill.py" : "main.py"), "run-sep");
     var src = d || lab;
+    var script = d ? "drill.py" : "main.py";
+    var argv = src.argv != null ? $("args").value.trim() : "";
+    print("▶ python " + script + (argv ? " " + argv : ""), "run-sep");
     var msg = {
       type: "run",
       code: code,
       prelude: src.prelude || "",
+      script: script,
+      argv: argv,
+      env: src.env != null ? envVars() : {},
       stdin: !d && lab.stdin != null ? stdinLines() : [],
       files: src.files || {},
       removeFiles: src.removeFiles || [],
@@ -530,12 +560,18 @@
       } else if (!res.out) {
         print("(no output)", "sys");
       }
+      // Command-line labs care about the exit code, as a CI system would. Elsewhere, only show it after sys.exit().
+      var ex = res.exit;
+      if (ex && (ex.exited || src.argv != null || src.env != null || src.showExit)) {
+        print("↳ exit code " + ex.code + (ex.code === 0 ? " (success)" : " (failure)"), ex.code === 0 ? "exit" : "exit bad");
+      }
       if (state.drill !== d || state.lab !== lab) return; // switched away while running
       if (d) afterDrill(res.results || []);
       else afterRun(res.results || []);
     });
   }
   $("runBtn").addEventListener("click", runCode);
+  $("args").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); runCode(); } });
 
   function afterRun(results) {
     var lab = state.lab;
@@ -581,7 +617,7 @@
     });
     if (!runner.ready) { print("Python is still loading. Try again in a moment.", "sys"); return; }
     var src = state.drill || state.lab;
-    runner.call({ type: "repl", code: code, files: src.files || {}, removeFiles: src.removeFiles || [] }, RUN_TIMEOUT).then(function (res) {
+    runner.call({ type: "repl", code: code, prelude: src.prelude || "", files: src.files || {}, removeFiles: src.removeFiles || [] }, RUN_TIMEOUT).then(function (res) {
       if (res.timeout) { print("⏱ Stopped after " + RUN_TIMEOUT / 1000 + " seconds (infinite loop?).", "err"); return; }
       if (res.internal) { print("Internal error: " + res.internal, "err"); return; }
       if (res.out) print(res.out.replace(/\n$/, ""));
