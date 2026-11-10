@@ -123,6 +123,8 @@
     sys.registry.push(regKey("HKLM:\\SYSTEM\\CurrentControlSet\\Services\\WinUpdateHelper", { ImagePath: "C:\\Users\\Public\\svc.exe", Start: 2, ObjectName: "LocalSystem" }));
   }
   C("Initialize-LabScenario", "SudoLearn", [p("Name", 0)], function (b, input, ctx) { applyScenario(ctx.session.system, toStr(b.name)); return []; });
+  lib.reg = { find: function (sys, path) { return regFind(sys, path); }, key: regKey };
+  lib.scenarios = { incident: applyScenario };
   lib.cmdlets["initialize-labscenario"].hidden = true;
 
   /* ================================================================== Registry */

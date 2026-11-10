@@ -24,7 +24,7 @@
     { id: "python", name: "Python", path: "python/", status: "open", color: "#ffd43b", labs: 36,
       blurb: "Write real Python that runs in your browser. From variables to a security scanner.",
       topics: ["Basics", "Files & regex", "Automation", "Secure coding"] },
-    { id: "powershell", name: "PowerShell", path: "powershell/", status: "open", color: "#5ea5ff", labs: 34,
+    { id: "powershell", name: "PowerShell", path: "powershell/", status: "open", color: "#5ea5ff", labs: 36,
       blurb: "Automate Windows admin and security work with objects and pipelines. Runs in a simulated PowerShell 7.",
       topics: ["Pipeline", "Windows system", "GUI tools", "Security"] },
     { id: "linux", name: "Linux", status: "soon", color: "#fb923c", labs: 0,

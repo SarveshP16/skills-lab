@@ -101,12 +101,19 @@
       groups: JSON.parse(JSON.stringify(GROUPS)),
       files: {},
       cwd: "C:\\lab",
+      loc: "C:\\lab",
       stdin: (opts.stdin || []).slice()
     };
     // A lab file is a string, or {content, ageDays} to give it an older LastWriteTime.
     Object.keys(opts.files || {}).forEach(function (f) {
       var v = opts.files[f];
-      if (v && typeof v === "object") { fsWrite(sys, f, v.content); fsGet(sys, f).mtime = NOW - (v.ageDays || 0) * 86400000; }
+      if (v && typeof v === "object") {
+        fsWrite(sys, f, v.content);
+        var fo = fsGet(sys, f);
+        fo.mtime = NOW - (v.ageDays || 0) * 86400000;
+        if (v.zone) fo.zone = v.zone;          // Mark of the Web: 3 = downloaded from the internet
+        if (v.from) fo.referrer = v.from;
+      }
       else fsWrite(sys, f, v);
     });
     (lib.systemHooks || []).forEach(function (h) { h(sys, opts); });
@@ -152,22 +159,28 @@
   lib.listTypes["System.Management.Automation.ErrorRecord"] = true;
 
   /* ================================================================== Files (a tiny virtual disk) */
+  // Paths resolve against the current location (sys.loc, Set-Location). Files under the lab folder (sys.cwd, C:\lab)
+  // are keyed relative to it; anything else (C:\Users\dev\...) by its full lower-case path.
   function normPath(sys, path) {
-    var s = toStr(path).replace(/\//g, "\\").trim();
-    if (/^[A-Za-z]:\\?/.test(s)) {
-      if (lc(s).indexOf(lc(sys.cwd)) === 0) s = s.slice(sys.cwd.length);
-      else return { abs: true, key: lc(s), display: s };
-    }
-    s = s.replace(/^\.\\/, "").replace(/^\\+/, "");
-    var parts = [];
-    s.split("\\").forEach(function (seg) {
+    var s = toStr(path).replace(/\//g, "\\").trim().replace(/^Microsoft\.PowerShell\.Core\\FileSystem::/i, "");
+    if (/^~(\\|$)/.test(s)) s = "C:\\Users\\dev" + s.slice(1);
+    var full;
+    if (/^[A-Za-z]:/.test(s)) full = s.charAt(0).toUpperCase() + ":\\" + s.slice(2).replace(/^\\+/, "");
+    else if (/^\\/.test(s)) full = "C:" + s;
+    else full = (sys.loc || sys.cwd) + "\\" + s;
+    var segs = full.split("\\"), out = [segs[0]];
+    segs.slice(1).forEach(function (seg) {
       if (seg === "" || seg === ".") return;
-      if (seg === "..") { parts.pop(); return; }
-      parts.push(seg);
+      if (seg === "..") { if (out.length > 1) out.pop(); return; }
+      out.push(seg);
     });
-    var rel = parts.join("\\");
-    return { abs: false, key: lc(rel), rel: rel, display: sys.cwd + (rel ? "\\" + rel : "") };
+    full = out.length === 1 ? out[0] + "\\" : out.join("\\");
+    var root = lc(sys.cwd);
+    if (lc(full) === root) return { abs: false, key: "", rel: "", display: sys.cwd };
+    if (lc(full).indexOf(root + "\\") === 0) { var rel = full.slice(sys.cwd.length + 1); return { abs: false, key: lc(rel), rel: rel, display: full }; }
+    return { abs: true, key: lc(full), rel: full, display: full };
   }
+  function fullOf(sys, name) { return /^[A-Za-z]:/.test(name) ? name : sys.cwd + "\\" + name; }
   function fsWrite(sys, path, content) {
     var n = normPath(sys, path);
     sys.files[n.key] = { name: n.rel || n.display, content: String(content), mtime: NOW - 3600000 };
@@ -186,17 +199,17 @@
   function fileObj(sys, key) {
     var f = sys.files[key];
     var rel = f.name, nm = rel.split("\\").pop();
-    var dir = rel.indexOf("\\") >= 0 ? sys.cwd + "\\" + rel.slice(0, rel.lastIndexOf("\\")) : sys.cwd;
+    var full = fullOf(sys, rel), dir = full.slice(0, full.lastIndexOf("\\"));
     var ext = nm.indexOf(".") >= 0 ? nm.slice(nm.lastIndexOf(".")) : "";
-    var o = obj("System.IO.FileInfo", { Name: nm, FullName: sys.cwd + "\\" + rel, DirectoryName: dir, Directory: dir, Extension: ext, BaseName: ext ? nm.slice(0, -ext.length) : nm,
+    var o = obj("System.IO.FileInfo", { Name: nm, FullName: full, DirectoryName: dir, Directory: dir, Extension: ext, BaseName: ext ? nm.slice(0, -ext.length) : nm,
       Length: new TextEncoder().encode(f.content).length, LastWriteTime: new PSDate(f.mtime), Mode: "-a---", PSIsContainer: false });
-    o.toStringFn = function () { return sys.cwd + "\\" + rel; };
+    o.toStringFn = function () { return full; };
     return o;
   }
   function dirObj(sys, rel) {
-    var nm = rel.split("\\").pop();
-    var o = obj("System.IO.FileInfo", { Name: nm, FullName: sys.cwd + "\\" + rel, Extension: "", BaseName: nm, Length: null, LastWriteTime: new PSDate(NOW - 86400000), Mode: "d----", PSIsContainer: true });
-    o.toStringFn = function () { return sys.cwd + "\\" + rel; };
+    var nm = rel.split("\\").pop(), full = fullOf(sys, rel);
+    var o = obj("System.IO.FileInfo", { Name: nm, FullName: full, Extension: "", BaseName: nm, Length: null, LastWriteTime: new PSDate(NOW - 86400000), Mode: "d----", PSIsContainer: true });
+    o.toStringFn = function () { return full; };
     return o;
   }
   function readLines(text) { var l = text.replace(/\r\n/g, "\n").split("\n"); if (l.length && l[l.length - 1] === "") l.pop(); return l; }
@@ -624,12 +637,13 @@
       out.push(c);
     });
     ctx.session.functions.forEach(function (f) {
+      if (f.private) return;
       if (nm && !matchAny(f.name, nm)) return;
       var parts = f.name.split("-");
       if (verbs && !matchAny(parts[0], verbs)) return;
       if (nouns && !matchAny(parts.slice(1).join("-"), nouns)) return;
-      if (b.module !== undefined) return;
-      out.push(obj("System.Management.Automation.FunctionInfo", { CommandType: "Function", Name: f.name, Version: "", Source: "", Verb: parts[0], Noun: parts.slice(1).join("-"), Definition: f.text }));
+      if (b.module !== undefined && !(f.module && matchAny(f.module, names(b.module)))) return;
+      out.push(obj("System.Management.Automation.FunctionInfo", { CommandType: "Function", Name: f.name, Version: "", Source: f.module || "", Verb: parts[0], Noun: parts.slice(1).join("-"), Definition: f.text }));
     });
     if (nm && !verbs && !nouns) {
       nm.forEach(function (n) {
@@ -989,6 +1003,16 @@
     var sys = ctx.session.system;
     // Files piped in (Get-ChildItem ... | Remove-Item) bind by their FullName.
     var paths = input && input.length ? input.map(function (x) { return toStr(x instanceof PSObject && x.has("FullName") ? x.get("FullName") : x); }) : names(b.path);
+    // Wildcards: Remove-Item C:\lab\temp\*.tmp
+    var expanded = [];
+    paths.forEach(function (pth) {
+      if (hasWildcard(pth)) {
+        var hits = lib.cmdlets["get-childitem"].run({ path: pth }, null, ctx).map(function (o) { return toStr(o.get("FullName")); });
+        if (!hits.length) return;
+        expanded = expanded.concat(hits);
+      } else expanded.push(pth);
+    });
+    paths = expanded;
     paths.forEach(function (pth) {
       var n = normPath(sys, pth);
       if (ctx.whatIf) { ctx.session.write("What if: Performing the operation \"Remove File\" on target \"" + n.display + "\".", "whatif"); return; }
@@ -1002,15 +1026,38 @@
   C("Join-Path", MGMT, [p("Path", 0), p("ChildPath", 1)], function (b) {
     return [toStr(b.path).replace(/[\\/]+$/, "") + "\\" + toStr(b.childpath).replace(/^[\\/]+/, "")];
   }, { synopsis: "Joins a folder and a file name with the right separator." });
-  C("Split-Path", MGMT, [p("Path", 0), sw("Leaf"), sw("Parent"), sw("Extension"), sw("LeafBase")], function (b) {
-    var s = toStr(b.path).replace(/\//g, "\\"), i = s.lastIndexOf("\\");
-    var leaf = i >= 0 ? s.slice(i + 1) : s;
-    if (b.leaf) return [leaf];
-    if (b.extension) return [leaf.indexOf(".") >= 0 ? leaf.slice(leaf.lastIndexOf(".")) : ""];
-    if (b.leafbase) return [leaf.indexOf(".") >= 0 ? leaf.slice(0, leaf.lastIndexOf(".")) : leaf];
-    return [i >= 0 ? s.slice(0, i) : ""];
+  C("Split-Path", MGMT, [p("Path", 0), sw("Leaf"), sw("Parent"), sw("Extension"), sw("LeafBase")], function (b, input) {
+    var paths = input && input.length ? input.map(function (x) { return toStr(x instanceof PSObject && x.has("FullName") ? x.get("FullName") : x); }) : names(b.path);
+    return paths.map(function (pth) {
+      var s = toStr(pth).replace(/\//g, "\\"), i = s.lastIndexOf("\\");
+      var leaf = i >= 0 ? s.slice(i + 1) : s;
+      if (b.leaf) return leaf;
+      if (b.extension) return leaf.indexOf(".") >= 0 ? leaf.slice(leaf.lastIndexOf(".")) : "";
+      if (b.leafbase) return leaf.indexOf(".") >= 0 ? leaf.slice(0, leaf.lastIndexOf(".")) : leaf;
+      return i >= 0 ? s.slice(0, i) : "";
+    });
   }, { synopsis: "Gets part of a path: the folder (default), or the file name with -Leaf." });
-  C("Get-Location", MGMT, [], function (b, input, ctx) { var o = obj("System.Management.Automation.PathInfo", { Path: ctx.session.system.cwd }); o.toStringFn = function () { return ctx.session.system.cwd; }; return [o]; }, { synopsis: "Shows the current folder." });
+  C("Get-Location", MGMT, [], function (b, input, ctx) { var here = ctx.session.system.loc || ctx.session.system.cwd; var o = obj("System.Management.Automation.PathInfo", { Path: here }); o.toStringFn = function () { return here; }; return [o]; }, { synopsis: "Shows the current folder." });
+  alias("pwd", "Get-Location"); alias("gl", "Get-Location");
+  C("Set-Location", MGMT, [p("Path", 0)], function (b, input, ctx) {
+    var sys = ctx.session.system, pth = b.path === undefined ? "~" : toStr(b.path);
+    var n = normPath(sys, pth);
+    if (!/^[A-Za-z]:\\?$/.test(n.display) && !fsIsDir(sys, pth)) {
+      throw err("Cannot find path '" + n.display + "' because it does not exist.", "ObjectNotFound");
+    }
+    sys.loc = n.display.replace(/\\$/, "") || n.display;
+    if (/^[A-Za-z]:$/.test(sys.loc)) sys.loc += "\\";
+    return [];
+  }, { synopsis: "Changes the current folder (cd)." });
+  alias("cd", "Set-Location"); alias("sl", "Set-Location"); alias("chdir", "Set-Location");
+  C("Push-Location", MGMT, [p("Path", 0)], function (b, input, ctx) {
+    var sys = ctx.session.system;
+    (sys.locStack = sys.locStack || []).push(sys.loc);
+    if (b.path !== undefined) lib.cmdlets["set-location"].run({ path: b.path }, null, ctx);
+    return [];
+  }, { synopsis: "Remembers the current folder, then changes to another (pushd)." });
+  C("Pop-Location", MGMT, [], function (b, input, ctx) { var sys = ctx.session.system; if (sys.locStack && sys.locStack.length) sys.loc = sys.locStack.pop(); return []; }, { synopsis: "Goes back to the folder Push-Location remembered (popd)." });
+  alias("pushd", "Push-Location"); alias("popd", "Pop-Location");
   alias("pwd", "Get-Location");
 
   /* ================================================================== CSV and JSON */

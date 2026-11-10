@@ -18,6 +18,9 @@
     this.scriptTerminating = !!opts.scriptTerminating;
     this.target = opts.target;
     this.thrown = opts.thrown; // the value given to throw
+    // Optional richer error details (web cmdlets, security errors): FullyQualifiedErrorId, exception type/message/properties, ErrorDetails.
+    this.errorId = opts.errorId; this.exceptionType = opts.exceptionType; this.exceptionMessage = opts.exceptionMessage;
+    this.exceptionProps = opts.exceptionProps; this.details = opts.details;
   }
   PSError.prototype = Object.create(Error.prototype);
   PSError.prototype.constructor = PSError;
@@ -179,7 +182,14 @@
       if (st) { st.line = st.line || line; return st; }
       this.i = at;
     }
-    if (this.c() === "[" && /^\[cmdletbinding/i.test(this.s.slice(this.i, this.i + 15))) { this.attributeList(); return null; }
+    if (this.c() === "[" && /^\[cmdletbinding/i.test(this.s.slice(this.i, this.i + 15))) {
+      // [CmdletBinding()] at the top of a script belongs to the param() block that follows it.
+      this.attributeList();
+      this.ws(true);
+      var nx = this.statement();
+      if (nx && nx.t === "param") nx.binding = true;
+      return nx;
+    }
     return this.pipelineStatement();
   };
 
@@ -501,10 +511,18 @@
     this.ws(false);
     var c = this.c(), line = this.line();
     if (c === "&" || (c === "." && /[ \t]/.test(this.c(1)))) {
+      var dot = c === ".";
       this.i++;
       this.ws(false);
       var target = this.argValue(false);
-      return this.commandArgs({ t: "cmd", nameExpr: target, line: line });
+      return this.commandArgs({ t: "cmd", nameExpr: target, dot: dot, line: line });
+    }
+    if ((c === "%" || c === "?") && /[\s{]/.test(this.c(1) || " ")) { this.i++; return this.commandArgs({ t: "cmd", name: c, line: line }); }
+    if (c === "." && /[\\\/.]/.test(this.c(1) || "")) {
+      // A relative path to a script: .\deploy.ps1, ./x.ps1, ..\tools\y.ps1
+      var pth = "";
+      while (!this.eof() && isWordChar(this.c())) pth += this.s.charAt(this.i++);
+      return this.commandArgs({ t: "cmd", name: pth, line: line });
     }
     if (isNameStart(c)) {
       // Keywords were already handled by statement(); here a word is always a command (e.g. "| foreach { }").
@@ -557,7 +575,14 @@
   };
   P.argAtom = function () {
     var c = this.c();
-    if (c === "$" || c === "'" || c === "\"" || c === "(" || c === "@" || c === "{" || c === "[") return this.postfix(this.primary());
+    if (c === "$") {
+      // In argument mode, text glued to a variable joins it: $PSScriptRoot\..\src\x.ps1, $dir\file.txt
+      var vnode = this.postfix(this.primary());
+      var rest = "";
+      while (!this.eof() && !/[\s|;(){},'"`$]/.test(this.c())) rest += this.s.charAt(this.i++);
+      return rest ? { t: "xstr", parts: [vnode, rest] } : vnode;
+    }
+    if (c === "'" || c === "\"" || c === "(" || c === "@" || c === "{" || c === "[") return this.postfix(this.primary());
     if (c === "-" && /[0-9.]/.test(this.c(1))) { this.i++; var n = this.argAtom(); return { t: "un", op: "-", e: n }; }
     var start = this.i, word = "";
     while (!this.eof()) {
@@ -1239,6 +1264,8 @@
     if (a instanceof PSDate) { try { return b !== null && a.ms === (b instanceof PSDate ? b : parseDate(b)).ms; } catch (e) { return false; } }
     if (a instanceof PSVersion) { try { return compareVersions(a, convertTo(b, "version")) === 0; } catch (e) { return false; } }
     if (a instanceof PSTimeSpan) return b instanceof PSTimeSpan && a.ms === b.ms;
+    // Objects that compare like their text (e.g. an NTAccount IdentityReference vs 'BUILTIN\Users').
+    if (a instanceof PSObject && a.cmpAsString) return cmpEq(toStr(a), b, cs);
     return a === b;
   }
   function compareVersions(a, b) {
@@ -1320,6 +1347,8 @@
     g.setLocal("PSVersionTable", (function () { var h = new PSHashtable(); h.set("PSVersion", new PSVersion([7, 4, 6])); h.set("PSEdition", "Core"); h.set("OS", "Microsoft Windows 10.0.26100 (simulated)"); h.set("Platform", "Win32NT"); return h; })());
     g.setLocal("PID", 4242);
     this.scriptScope = g;
+    var self = this;
+    (this.lib.sessionHooks || []).forEach(function (h) { h(self); });
   }
   Session.prototype.write = function (text, cls) {
     var self = this;
@@ -1370,9 +1399,12 @@
   Session.prototype.step = function () { if (++this.steps > this.maxSteps) throw new StepLimit(); };
 
   function errorRecord(e) {
-    var ex = obj("System.Management.Automation.RuntimeException", { Message: e.message });
-    ex.toStringFn = function () { return e.message; };
-    var rec = obj("System.Management.Automation.ErrorRecord", { Exception: ex, CategoryInfo: e.category, FullyQualifiedErrorId: e.category, TargetObject: e.target === undefined ? null : e.target });
+    var exMsg = e.exceptionMessage || e.message;
+    var ex = obj(e.exceptionType || "System.Management.Automation.RuntimeException", { Message: exMsg });
+    if (e.exceptionProps) Object.keys(e.exceptionProps).forEach(function (k) { ex.set(k, e.exceptionProps[k]); });
+    ex.toStringFn = function () { return exMsg; };
+    var rec = obj("System.Management.Automation.ErrorRecord", { Exception: ex, CategoryInfo: e.category, FullyQualifiedErrorId: e.errorId || e.category, TargetObject: e.target === undefined ? null : e.target,
+      ErrorDetails: e.details ? obj("System.Management.Automation.ErrorDetails", { Message: e.details }) : null });
     rec.toStringFn = function () { return e.message; };
     rec.psError = e;
     return rec;
@@ -2326,11 +2358,14 @@
   function findCommand(name, ctx) {
     var s = ctx.session;
     var n = lc(name);
-    if (s.functions.has(n)) return { kind: "function", def: s.functions.get(n) };
+    // A module's private functions are visible only to the module's own functions.
+    function visible(f) { return f && (!f.private || (ctx.fn && ctx.fn.module === f.module)); }
+    if (s.mocks && s.mocks[n] && !ctx.inMock) return { kind: "cmdlet", def: s.mocks[n] };   // Pester's Mock
+    if (visible(s.functions.get(n))) return { kind: "function", def: s.functions.get(n) };
     var lib = s.lib;
-    var alias = lib.aliases && lib.aliases[n];
+    var alias = (s.aliases && s.aliases[n]) || (lib.aliases && lib.aliases[n]);
     if (alias) n = lc(alias);
-    if (s.functions.has(n)) return { kind: "function", def: s.functions.get(n) };
+    if (visible(s.functions.get(n))) return { kind: "function", def: s.functions.get(n) };
     if (lib.cmdlets && lib.cmdlets[n]) return { kind: "cmdlet", def: lib.cmdlets[n] };
     return null;
   }
@@ -2348,6 +2383,11 @@
       target = toStr(nv);
     } else target = cmd.name;
     var found = findCommand(target, ctx);
+    // Script files, .cmd/.exe programs and pwsh itself (ps-run.js); dot-sourcing runs a script in the caller's scope.
+    if (!found && ctx.session.lib.external) {
+      var ext = ctx.session.lib.external(target, ctx, cmd);
+      if (ext) return ext(evalArgs(cmd, ctx), hasInput ? input : null, !!cmd.dot);
+    }
     if (!found) {
       throw new PSError("The term '" + target + "' is not recognized as a name of a cmdlet, function, script file, or executable program.\nCheck the spelling of the name, or if a path was included, verify that the path is correct and try again.",
         { category: "CommandNotFound", command: target });
@@ -2883,7 +2923,8 @@
     formatOperator: formatOperator, writeCmdletError: writeCmdletError, writeVerbose: writeVerbose, bindArgs: bindArgs, enumerate: enumerate, unwrap: unwrap,
     roundEven: roundEven, parseDate: parseDate, dateLong: dateLong, isType: isType, lc: lc, evalExpr: evalExpr, Scope: Scope, Ctx: Ctx, tableText: tableText, listText: listText,
     cellText: cellText, columnsFor: columnsFor, errorRecord: errorRecord, findCommand: findCommand, setMatches: setMatches,
-    execBlock: execBlock, ReturnSignal: ReturnSignal, BreakSignal: BreakSignal, ContinueSignal: ContinueSignal, StepLimit: StepLimit,
+    execBlock: execBlock, ReturnSignal: ReturnSignal, ExitSignal: ExitSignal, callFunction: callFunction, compileParam: compileParam,
+    evalArgs: evalArgs, makeSink: makeSink, flushOutput: flushOutput, BreakSignal: BreakSignal, ContinueSignal: ContinueSignal, StepLimit: StepLimit,
     lib: (root.PSEngine && root.PSEngine.lib) || {}
   };
   root.PSEngine = api;
