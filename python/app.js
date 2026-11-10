@@ -533,6 +533,7 @@
       type: "run",
       code: code,
       prelude: src.prelude || "",
+      packages: src.packages || [],
       script: script,
       argv: argv,
       env: src.env != null ? envVars() : {},
@@ -617,7 +618,7 @@
     });
     if (!runner.ready) { print("Python is still loading. Try again in a moment.", "sys"); return; }
     var src = state.drill || state.lab;
-    runner.call({ type: "repl", code: code, prelude: src.prelude || "", files: src.files || {}, removeFiles: src.removeFiles || [] }, RUN_TIMEOUT).then(function (res) {
+    runner.call({ type: "repl", code: code, prelude: src.prelude || "", packages: src.packages || [], files: src.files || {}, removeFiles: src.removeFiles || [] }, RUN_TIMEOUT).then(function (res) {
       if (res.timeout) { print("⏱ Stopped after " + RUN_TIMEOUT / 1000 + " seconds (infinite loop?).", "err"); return; }
       if (res.internal) { print("Internal error: " + res.internal, "err"); return; }
       if (res.out) print(res.out.replace(/\n$/, ""));

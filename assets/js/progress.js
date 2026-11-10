@@ -21,7 +21,7 @@
 
   // The learning path, in the order the learner chose.
   var TRACKS = [
-    { id: "python", name: "Python", path: "python/", status: "open", color: "#ffd43b", labs: 35,
+    { id: "python", name: "Python", path: "python/", status: "open", color: "#ffd43b", labs: 36,
       blurb: "Write real Python that runs in your browser. From variables to a security scanner.",
       topics: ["Basics", "Files & regex", "Automation", "Secure coding"] },
     { id: "powershell", name: "PowerShell", status: "soon", color: "#5ea5ff", labs: 0,

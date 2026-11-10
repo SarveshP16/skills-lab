@@ -335,7 +335,7 @@ function writeFiles(files, remove) {
 }
 
 /* Extra Pyodide packages, loaded the first time code imports them (import name -> package name). */
-var PACKAGES = { yaml: "pyyaml" };
+var PACKAGES = { yaml: "pyyaml", sqlite3: "sqlite3" };
 var loaded = {};
 
 function importedModules(code) {
@@ -349,16 +349,20 @@ function importedModules(code) {
   return mods;
 }
 
-async function ensurePackages(code, id) {
+// extra: package names a lab asks for directly (lab.packages), e.g. "hashlib" for OpenSSL's scrypt/pbkdf2.
+async function ensurePackages(code, id, extra) {
   var need = [];
   importedModules(code).forEach(function (mod) {
     var pkg = PACKAGES[mod];
     if (pkg && !loaded[pkg] && need.indexOf(pkg) < 0) need.push(pkg);
   });
+  (extra || []).forEach(function (pkg) { if (!loaded[pkg] && need.indexOf(pkg) < 0) need.push(pkg); });
   if (!need.length) return;
   postMessage({ type: "loading", id: id, text: "Downloading " + need.join(", ") + " (first time only)…" });
   await py.loadPackage(need, { messageCallback: function () {} });
   need.forEach(function (p) { loaded[p] = true; });
+  // hashlib may already be imported without OpenSSL; reload it so scrypt and pbkdf2_hmac appear.
+  if (need.indexOf("hashlib") >= 0) py.runPython("import importlib, sys\nif 'hashlib' in sys.modules: importlib.reload(sys.modules['hashlib'])");
   postMessage({ type: "loaded", id: id });
 }
 
@@ -369,7 +373,7 @@ onmessage = async function (e) {
     if (!py) throw new Error("Python failed to load");
     if (msg.type === "run") {
       await ensurePackages(msg.code + "\n" + (msg.prelude || "") + "\n" +
-        (msg.checks || []).map(function (c) { return c.code; }).join("\n"), msg.id);
+        (msg.checks || []).map(function (c) { return c.code; }).join("\n"), msg.id, msg.packages);
       writeFiles(msg.files, msg.removeFiles);
       var fn = py.globals.get("_sl_run");
       var res = fn(msg.code, msg.prelude || "", JSON.stringify(msg.stdin || []), JSON.stringify(msg.checks || []),
@@ -377,7 +381,7 @@ onmessage = async function (e) {
       fn.destroy();
       postMessage({ type: "result", id: msg.id, data: JSON.parse(res) });
     } else if (msg.type === "repl") {
-      await ensurePackages(msg.code, msg.id);
+      await ensurePackages(msg.code + "\n" + (msg.prelude || ""), msg.id, msg.packages);
       writeFiles(msg.files, msg.removeFiles);
       var r = py.globals.get("_sl_repl");
       var out = r(msg.code, msg.prelude || "");
