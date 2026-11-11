@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git & GitHub · sudo learn</title>
+<meta name="description" content="Git and GitHub labs for beginners heading toward DevSecOps. A simulated Git in a real-feeling terminal, in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e13'/%3E%3Cpath d='M7 10l6 6-6 6' stroke='%23f05133' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='16' y='20' width='9' height='3' rx='1' fill='%23f05133'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="../assets/css/base.css">
+<link rel="stylesheet" href="../assets/css/lab.css">
+</head>
+<body style="--prompt: ''">
+<header class="topbar">
+  <button class="iconbtn" id="menuBtn" aria-label="Show labs" aria-expanded="false">☰</button>
+  <a class="logo" href="../"><span class="sig">$</span>&nbsp;sudo learn<span class="cur"></span></a>
+  <span class="crumb">/ <b>git</b></span>
+  <span class="spacer"></span>
+  <span class="xp" id="xpBox"></span>
+</header>
+
+<div class="main">
+  <nav class="side" id="side" aria-label="Labs"></nav>
+  <div class="scrim" id="scrim"></div>
+
+  <section class="brief" id="brief" aria-label="Ticket">
+    <div class="ticket-head">
+      <div class="meta"><span class="pill amber" id="tTicket"></span><span class="topic" id="tTopic"></span></div>
+      <h1 id="tTitle"></h1>
+      <div class="from" id="tFrom"></div>
+      <div class="story" id="tStory"></div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabLearn" aria-selected="true" data-tab="learn">1 · Learn</button>
+      <button role="tab" id="tabTasks" aria-selected="false" data-tab="tasks">2 · Tasks <span class="badge" id="taskBadge"></span></button>
+    </div>
+    <div class="tabpanel" id="panelLearn" role="tabpanel"></div>
+    <div class="tabpanel" id="panelTasks" role="tabpanel" hidden></div>
+  </section>
+
+  <section class="work" aria-label="Terminal">
+    <div class="toolbar">
+      <span class="fname" id="fname">terminal</span>
+      <span class="status" id="pyStatus"><i></i><span>Starting kc-dev-01…</span></span>
+      <span class="spacer"></span>
+      <button class="btn small ghost" id="resetCode" title="Start over on a fresh copy of the laptop">Reset machine</button>
+      <button class="btn small primary" id="runBtn" disabled>▶ Run</button>
+    </div>
+    <div class="editor-wrap"><textarea id="code" aria-label="unused"></textarea></div>
+    <div class="io">
+    <div class="stdin" id="stdinBox" hidden><label for="stdin">Input</label><textarea id="stdin" rows="2" spellcheck="false"></textarea></div>
+    <div class="stdin" id="argsBox" hidden><label for="args">Arguments</label><div class="argrow"><span class="argcmd"><b id="argScript"></b></span><input id="args" spellcheck="false" autocomplete="off"></div></div>
+    <div class="stdin" id="envBox" hidden><label for="env">Environment</label><textarea id="env" rows="2" spellcheck="false"></textarea></div>
+    </div>
+    <div class="console">
+      <div class="console-head"><span>kc-dev-01 · bash · git</span><button class="link" id="clearBtn">clear screen</button></div>
+      <div class="out" id="out" aria-live="polite"></div>
+      <form class="repl" id="replForm" autocomplete="off">
+        <span class="ps">dev@kc-dev-01:~$</span>
+        <input id="repl" spellcheck="false" autocapitalize="off" autocorrect="off" placeholder="type a command, e.g. git status" aria-label="Terminal input">
+      </form>
+    </div>
+  </section>
+</div>
+
+<button class="jump" id="jumpBtn" type="button">Terminal ↓</button>
+
+<div class="modal" id="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="stamp" id="mStamp">TICKET CLOSED</div>
+    <h2 id="mTitle"></h2>
+    <div class="xpline" id="mXP"></div>
+    <div class="debrief" id="mDebrief"></div>
+    <div class="quiz" id="mQuiz"></div>
+    <div class="real" id="mReal"></div>
+    <div class="actions">
+      <button class="btn ghost" id="mStay">Stay here</button>
+      <button class="btn primary" id="mNext">Next ticket →</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/runmode/runmode.min.js"></script>
+<script src="../assets/js/progress.js"></script>
+<script src="../linux/sh-engine.js"></script>
+<script src="../linux/sh-cmds.js"></script>
+<script src="../linux/sh-sys.js"></script>
+<script src="../linux/sh-net.js"></script>
+<script src="../linux/sh-lab.js"></script>
+<script src="git-core.js"></script>
+<script src="git-cmds.js"></script>
+<script src="git-lab.js"></script>
+<script src="labs.js"></script>
+<script src="drills.js"></script>
+<script>
+  window.LAB_CONFIG = {
+    track: "git", data: window.GIT_TRACK, mode: "shell", runMode: "shell", terminal: true, editor: true,
+    prompt: "dev@kc-dev-01:~$",
+    file: "terminal", drillFile: "terminal", cmd: "git", lang: "Git",
+    runner: GitLab.runner,
+    isCode: /^[a-z~.\/][\w.\/~-]*( |$)|\n/
+  };
+</script>
+<script src="../assets/js/lab-app.js"></script>
+</body>
+</html>

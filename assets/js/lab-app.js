@@ -679,6 +679,7 @@
       if (!code.trim()) { if (!state.running) print(promptText + "\u0001", "cmd"); return; }
       replHist.push(code);
       replPos = replHist.length;
+      if (CFG.editor && EDIT_RE.test(code) && !termQueue.length && !state.running) { openEditor(code); return; }
       termQueue.push(code);
       if (!state.running) termNext();
       return;
@@ -710,7 +711,73 @@
   });
 
   /* ---------------------------------------------------------------- Terminal-first mode */
-  var termHist = "", promptText = "dev@kc-web-01:~$", termQueue = [];
+  var termHist = "", promptText = CFG.prompt || "dev@kc-web-01:~$", termQueue = [];
+  function shownCmd(l) { var m = /^@edit!? (\S+)/.exec(l); return m ? (l.charAt(5) === "!" ? "sudo nano " : "nano ") + decodeURIComponent(m[1]) : l; }
+
+  /* ---------------------------------------------------------------- the editor panel (LAB_CONFIG.editor) */
+  // "nano FILE" (or vim, vi, code, edit) opens the file in a panel; saving adds an "@edit" line to the history.
+  var EDIT_RE = /^\s*(sudo\s+)?(nano|vim|vi|code|edit|gedit|emacs)\s+(?:-\S+\s+)*([^\s;&|<>]+)\s*$/;
+  var ed = null;
+  function edEl() {
+    if (ed) return ed;
+    var wrap = document.createElement("div");
+    wrap.className = "edpane"; wrap.hidden = true;
+    wrap.innerHTML = '<div class="edhead"><span class="edname"></span><span class="spacer"></span><button class="btn small ghost" type="button" data-act="cancel">Close without saving</button><button class="btn small primary" type="button" data-act="save">Save</button></div>' +
+      '<textarea class="edtext" spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="File contents"></textarea>' +
+      '<div class="edfoot">Ctrl+S saves and closes · Esc closes without saving · this panel stands in for nano or vim</div>';
+    document.querySelector(".work").appendChild(wrap);
+    ed = { wrap: wrap, name: wrap.querySelector(".edname"), text: wrap.querySelector(".edtext"), cur: null };
+    wrap.addEventListener("click", function (e) { var a = e.target.getAttribute && e.target.getAttribute("data-act"); if (a === "save") saveEditor(); else if (a === "cancel") closeEditor(false); });
+    ed.text.addEventListener("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S" || e.key === "o" || e.key === "O")) { e.preventDefault(); saveEditor(); return; }
+      if (e.key === "Escape") { e.preventDefault(); closeEditor(false); return; }
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        var a = this.selectionStart, b = this.selectionEnd, p = (ed.cur || {}).path || "";
+        var ins = /\.py$/i.test(p) ? "    " : /\.(ya?ml|js|json|md|html|css)$/i.test(p) ? "  " : "\t";
+        this.value = this.value.slice(0, a) + ins + this.value.slice(b);
+        this.selectionStart = this.selectionEnd = a + ins.length;
+      }
+    });
+    return ed;
+  }
+  function openEditor(line) {
+    var m = EDIT_RE.exec(line), asRoot = !!m[1], path = m[3];
+    var src = state.drill || state.lab;
+    print(promptText + "\u0001" + line, "cmd");
+    runner.call({ type: "read", code: termHist, path: path, root: asRoot, files: src.files || {}, prelude: src.prelude || "", system: src.system }).then(function (res) {
+      if (!res || res.error) { print(m[2] + ": " + ((res && res.error) || "can't open " + path), "err"); return; }
+      var e = edEl();
+      e.cur = { path: path, root: asRoot, orig: res.content, exists: res.exists };
+      e.name.innerHTML = "<b>" + esc(m[2] === "code" ? "editor" : m[2]) + "</b> · " + esc(path) + (res.exists ? "" : ' <span class="new">(new file)</span>') + (res.writable === false ? ' <span class="ro">(read-only for you: saving will fail without sudo)</span>' : "");
+      e.text.value = res.content;
+      e.wrap.hidden = false;
+      document.body.classList.add("editing");
+      setTimeout(function () { e.text.focus(); e.text.setSelectionRange(0, 0); e.text.scrollTop = 0; }, 0);
+    });
+  }
+  function closeEditor(saved) {
+    if (!ed || ed.wrap.hidden) return;
+    ed.wrap.hidden = true;
+    document.body.classList.remove("editing");
+    if (!saved) print("(closed " + ed.cur.path + " without saving)", "sys");
+    if (!saved) ed.cur = null;
+    $("repl").focus();
+  }
+  function b64(text) { return btoa(unescape(encodeURIComponent(text))); }
+  function saveEditor() {
+    if (!ed || !ed.cur) return;
+    var text = ed.text.value.replace(/\r/g, "");
+    if (text !== "" && text.charAt(text.length - 1) !== "\n") text += "\n";   // nano ends files with a newline
+    var cur = ed.cur;
+    closeEditor(true);
+    ed.cur = null;
+    if (text === cur.orig && cur.exists) { print("(no changes to " + cur.path + ")", "sys"); return; }
+    // the "nano FILE" line printed when the panel opened is replaced by the replayed one
+    if (out.lastChild && out.lastChild.className === "cmd") out.removeChild(out.lastChild);
+    termQueue.push("@edit" + (cur.root ? "!" : "") + " " + encodeURIComponent(cur.path) + " " + b64(text));
+    if (!state.running) termNext();
+  }
   // Commands typed while the previous one is still being checked wait their turn.
   function termNext() {
     if (!termQueue.length) return;
@@ -725,12 +792,12 @@
     var saved = SL.getCode(TRACK, codeKey());
     termHist = saved || "";
     termQueue = [];
-    replHist = termHist ? termHist.split("\n").filter(function (l) { return l.trim(); }) : [];
+    replHist = termHist ? termHist.split("\n").filter(function (l) { return l.trim(); }).map(shownCmd) : [];
     replPos = replHist.length;
     out.innerHTML = "";
     var d = state.drill, lab = state.lab;
     print("# " + (d ? "Drill: " + d.title : lab.ticket + " · " + lab.title) + ". Type commands at the prompt below; your tasks are checked after each one. Tab completes names; ↑ recalls commands.", "sys");
-    setPrompt("dev@kc-web-01:~$");
+    setPrompt(CFG.prompt || "dev@kc-web-01:~$");
     if (!termHist.trim()) return;
     print("# Your machine was restored from the " + termCount() + " command" + (termCount() === 1 ? "" : "s") + " you typed (Reset machine starts over).", "sys");
     termCall(0, true);

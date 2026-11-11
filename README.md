@@ -11,7 +11,7 @@ Hands-on labs for learning Python, PowerShell, Linux, Git & GitHub, Networking, 
 | 1 | Python | Complete: 4 modules, 32 labs, 4 capstone projects and 99 practice drills |
 | 2 | PowerShell | Complete: 32 labs, 4 capstone projects and 108 practice drills, on a simulated PowerShell 7 (with simulated Windows GUI windows, scripts run like programs, Pester and PSScriptAnalyzer) |
 | 3 | Linux | Modules 1-2 open: 17 labs, 2 capstone projects and 57 practice drills (36 labs planned), typed into a simulated Bash terminal on an Ubuntu 24.04 server with real services, packages, disks, a network and SSH to other servers |
-| 4 | Git & GitHub | planned |
+| 4 | Git & GitHub | Module 1 open: 9 labs, a capstone project and 30 practice drills (36 labs planned), typed into a simulated Git 2.43 (real commit IDs, merges, conflicts, stash, bisect) with an editor panel for resolving conflicts |
 | 5 | Networking | planned |
 | 6 | DevOps | planned |
 | 7 | AppSec & Security | planned |
@@ -41,5 +41,6 @@ assets/js/lab-app.js  shared lab page logic (tasks, hints, drills, XP; editor or
 python/               Python track (Pyodide worker, lab content per module)
 powershell/           PowerShell track (simulated PowerShell 7, Windows system and GUI windows, labs)
 linux/                Linux track (simulated Bash on an Ubuntu server, terminal-first labs)
+git/                  Git & GitHub track (simulated git on the same Bash engine, on a developer laptop)
 prototype/night-shift the earlier Linux/Networking/DevOps prototype, to be reused by later tracks
 ```

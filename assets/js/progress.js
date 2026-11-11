@@ -30,7 +30,7 @@
     { id: "linux", name: "Linux", path: "linux/", status: "open", color: "#fb923c", labs: 36,
       blurb: "Live in the terminal: files, permissions, processes, services and logs. A simulated Ubuntu server in your browser.",
       topics: ["Shell", "Permissions", "Processes", "Services"] },
-    { id: "git", name: "Git & GitHub", status: "soon", color: "#f05133", labs: 0,
+    { id: "git", name: "Git & GitHub", path: "git/", status: "open", color: "#f05133", labs: 36,
       blurb: "Track changes, branch, merge, and collaborate the way engineering teams do.",
       topics: ["Commits", "Branches", "Pull requests", "Actions"] },
     { id: "networking", name: "Networking", status: "soon", color: "#22d3ee", labs: 0,

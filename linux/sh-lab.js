@@ -22,19 +22,63 @@
       var shell = S.activeShell(sess);
       var e = { cmd: line, prompt: S.prompt(shell), cwdBefore: shell.cwd, userBefore: shell.user };
       var res;
-      try { res = S.runLine(sess, line); }
+      if (/^@edit!? /.test(line)) { res = editLine(sess, shell, line, e); }
+      else try { res = S.runLine(sess, line); }
       catch (err) { res = { code: 1, lines: [{ text: "Internal error in the Linux simulator: " + (err && err.message || err), cls: "err" }] }; }
       var after = S.activeShell(sess);
       e.exit = res.code;
       e.lines = res.lines;
       e.clear = res.clear;
-      e.out = res.lines.filter(function (l) { return l.cls === ""; }).map(function (l) { return l.text; });
+      e.out = res.lines.filter(function (l) { return l.cls !== "err" && l.cls !== "sys"; }).map(function (l) { return l.text; });
       e.err = res.lines.filter(function (l) { return l.cls === "err"; }).map(function (l) { return l.text; });
       e.cwd = after.cwd;
       e.user = after.user;
       entries.push(e);
     });
     return { sess: sess, entries: entries };
+  }
+
+  /* ---------------- the editor: "@edit PATH BASE64" lines are saves from the editor panel */
+  function b64decode(t) {
+    if (typeof Buffer !== "undefined" && typeof window === "undefined") return Buffer.from(t, "base64").toString("utf8");
+    var bin = atob(t), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  function parseEdit(line) {
+    var m = /^@edit(!?) (\S+) ?(\S*)$/.exec(line);
+    if (!m) return null;
+    return { root: m[1] === "!", path: decodeURIComponent(m[2]), content: m[3] ? b64decode(m[3]) : "" };
+  }
+  function editLine(sess, shell, line, e) {
+    var ed = parseEdit(line);
+    var shown = (ed && ed.root ? "sudo nano " : "nano ") + (ed ? ed.path : "");
+    sess.histLines.push(shown);
+    e.shown = shown;
+    e.edit = ed;
+    if (!ed) return { code: 1, lines: [{ text: "nano: couldn't read the saved file", cls: "err" }] };
+    var who = shell;
+    if (ed.root) who = { sys: sess.sys, uid: 0, gid: 0, groups: [], cwd: shell.cwd, umask: 18, vars: {}, home: "/root", user: "root" };
+    var err = S.writeFile(who, ed.path.replace(/^~(?=\/|$)/, shell.home), ed.content, false);
+    if (err) return { code: 1, lines: [{ text: "[ Error writing " + ed.path + ": " + S.ERRTEXT[err] + " ]", cls: "err" }] };
+    var n = ed.content === "" ? 0 : ed.content.replace(/\n$/, "").split("\n").length;
+    return { code: 0, lines: [{ text: "[ Wrote " + n + " line" + (n === 1 ? "" : "s") + " to " + ed.path + " ]", cls: "sys" }] };
+  }
+  // What the editor panel opens: the file as it is after the commands so far.
+  function readForEdit(code, opts, path, asRoot) {
+    var run = replay(code, opts);
+    var shell = S.activeShell(run.sess);
+    if (asRoot) shell = { sys: run.sess.sys, uid: 0, gid: 0, groups: [], cwd: shell.cwd, umask: 18, vars: {}, home: shell.home, user: "root" };
+    var p2 = path.replace(/^~(?=\/|$)/, shell.home);
+    var abs = S.normAbs(p2.charAt(0) === "/" ? p2 : shell.cwd + "/" + p2);
+    var r = S.lookup(shell, abs);
+    if (r.node) {
+      if (r.node.type === "d") return { error: path + " is a directory" };
+      if (!S.can(shell, r.node, "r")) return { error: path + ": Permission denied (try sudo)" };
+      return { ok: true, path: path, abs: abs, content: r.node.content, exists: true, writable: S.can(shell, r.node, "w") };
+    }
+    if (r.error === "ENOENT" && r.last && r.parent) return { ok: true, path: path, abs: abs, content: "", exists: false, writable: S.can(shell, r.parent, "w") };
+    return { error: path + ": " + (S.ERRTEXT[r.error] || "can't open") };
   }
 
   /* ---------------- check context */
@@ -194,6 +238,7 @@
   function handle(msg) {
     var opts = { files: msg.files || {}, prelude: msg.prelude || "", system: msg.system };
     if (msg.type === "complete") return complete(msg.code, opts, msg.line || "");
+    if (msg.type === "read") return readForEdit(msg.code, opts, msg.path || "", msg.root);
     var run;
     try { run = replay(msg.code, opts); }
     catch (e) { return { internal: "the Linux simulator crashed: " + (e && e.stack || e) }; }
@@ -202,7 +247,7 @@
     run.entries.forEach(function (e, i) {
       if (i < from) return;
       if (e.clear) { parts = []; cleared = true; }
-      else parts.push({ text: e.prompt + "\u0001" + e.cmd, cls: "cmd" });
+      else parts.push({ text: e.prompt + "\u0001" + (e.shown || e.cmd), cls: "cmd" });
       e.lines.forEach(function (l) { parts.push({ text: l.text, cls: l.cls }); });
       if (i === run.entries.length - 1) { var ex = explainFor(e.lines); if (ex) parts.push({ text: ex, cls: "explain" }); }
     });
@@ -217,7 +262,7 @@
     start: function (hooks) { this.ready = true; hooks.setStatus("ok", "kc-web-01 · Ubuntu 24.04 (simulated)"); hooks.enableRun(); },
     call: function (msg) { return new Promise(function (res) { setTimeout(function () { res(handle(msg)); }, 0); }); }
   };
-  var api = { handle: handle, runner: runner, H: H, replay: replay, makeCtx: makeCtx, commandsOf: commandsOf, complete: complete, prompt: function () { return "dev@kc-web-01:~$"; } };
+  var api = { handle: handle, runner: runner, H: H, replay: replay, makeCtx: makeCtx, commandsOf: commandsOf, complete: complete, readForEdit: readForEdit, parseEdit: parseEdit, prompt: function () { return "dev@kc-web-01:~$"; } };
   root.ShLab = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -270,3 +270,18 @@ details.ref summary { cursor: pointer; font-weight: 600; font-size: 14px; color:
   .term-mode .repl .ps { max-width: 45vw; overflow: hidden; text-overflow: ellipsis; }
   .term-mode .repl { padding-right: 104px; }
 }
+
+/* Editor panel for terminal labs (LAB_CONFIG.editor): "nano FILE" opens this over the terminal. */
+.work { position: relative; }
+.edpane { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; background: var(--bg-2); border-left: 1px solid var(--line); }
+.edpane[hidden] { display: none; }
+.edhead { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); font: 500 13px/1.4 var(--font-mono); color: var(--text-2); flex-wrap: wrap; }
+.edhead b { color: var(--green); }
+.edhead .new { color: var(--muted); }
+.edhead .ro { color: var(--amber); }
+.edtext { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: 0; padding: 12px 14px; background: var(--bg-2); color: var(--text); font: 400 13.5px/1.55 var(--font-mono); tab-size: 4; white-space: pre; overflow: auto; }
+.edfoot { padding: 6px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+@media (max-width: 820px) { .edpane { position: fixed; inset: 0; z-index: 60; } .edtext { font-size: 16px; } }
+
+/* empty output lines (blank lines in command output) keep their height */
+.out > div:empty::after { content: "\200b"; }

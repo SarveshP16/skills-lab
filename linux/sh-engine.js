@@ -843,11 +843,11 @@
 
   /* ================================================================== Terminal output */
   // kind: false = stdout, true = stderr, "sys" = a dim note from the lab (not real output)
-  function termWrite(sess, text, kind) { (sess.root || sess).term.push({ text: String(text), err: kind === true, sys: kind === "sys" }); }
+  function termWrite(sess, text, kind) { (sess.root || sess).term.push({ text: String(text), err: kind === true, sys: kind === "sys", cls: typeof kind === "string" && kind !== "sys" ? kind : null }); }
   // Turn the stream of chunks into lines: [{text, cls}]
   function termLines(chunks) {
     var lines = [], cur = "", kind = null;
-    function k(ch) { return ch.err ? "err" : ch.sys ? "sys" : ""; }
+    function k(ch) { return ch.err ? "err" : ch.sys ? "sys" : ch.cls || ""; }
     chunks.forEach(function (ch) {
       var parts = ch.text.split("\n");
       parts.forEach(function (p, i) {
@@ -986,7 +986,7 @@
       var last = k === node.cmds.length - 1;
       var buf = [];
       var cmd = node.cmds[k];
-      var io2 = { stdin: input, out: last ? io.out : function (t) { buf.push(t); }, err: cmd.stderrToPipe && !last ? function (t) { buf.push(t); } : io.err, tty: last ? io.tty : false, pipedIn: k > 0, note: last ? io.note : null };
+      var io2 = { stdin: input, out: last ? io.out : function (t) { buf.push(t); }, err: cmd.stderrToPipe && !last ? function (t) { buf.push(t); } : io.err, tty: last ? io.tty : false, pipedIn: k > 0, note: last ? io.note : null, color: last ? io.color : null };
       var code;
       var ps = node.cmds.length > 1 ? subshellLite(sess) : sess;
       try { code = execNode(ps, cmd, io2, false); }
@@ -1004,7 +1004,7 @@
   function subshellLite(sess) { return subshell(sess); }
 
   function openRedirs(sess, redirs, io) {
-    var o = { stdin: io.stdin, out: io.out, err: io.err, tty: io.tty, pipedIn: io.pipedIn, note: io.note };
+    var o = { stdin: io.stdin, out: io.out, err: io.err, tty: io.tty, pipedIn: io.pipedIn, note: io.note, color: io.color };
     var files = [];
     for (var k = 0; k < redirs.length; k++) {
       var r = redirs[k];
@@ -1290,7 +1290,7 @@
     sess.term = [];
     sess.histLines.push(line);
     var shell = sess.userStack.length ? sess.userStack[sess.userStack.length - 1].shell : sess;
-    var io = { stdin: null, out: function (t) { termWrite(sess, t, false); }, err: function (t) { termWrite(sess, t, true); }, note: function (t) { termWrite(sess, t, "sys"); }, tty: true };
+    var io = { stdin: null, out: function (t) { termWrite(sess, t, false); }, err: function (t) { termWrite(sess, t, true); }, note: function (t) { termWrite(sess, t, "sys"); }, color: function (t, c) { termWrite(sess, t, "c-" + c); }, tty: true };
     var code;
     sess.cleared = false;
     try {
