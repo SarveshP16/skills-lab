@@ -133,6 +133,19 @@
   };
   // Explanations printed under common errors, in plain words.
   var EXPLAIN = [
+    [/Permission denied \(publickey/, "The server didn't accept any of your keys. Is your public key in the server's ~/.ssh/authorized_keys (ssh-copy-id puts it there)? ssh -v shows which keys were tried."],
+    [/UNPROTECTED PRIVATE KEY FILE|bad permissions$/, "SSH refuses private keys that others can read. Fix it with chmod 600 on the key file."],
+    [/Bad owner or permissions on/, "SSH refuses a config file that other people could change. chmod 600 ~/.ssh/config fixes it."],
+    [/Host key verification failed/, "The server's key doesn't match the one saved in ~/.ssh/known_hosts. If the server was legitimately rebuilt, remove the old entry with ssh-keygen -R HOST; otherwise stop and ask why it changed."],
+    [/kill.*Operation not permitted|killing pid .* failed/, "You can only signal (kill) your own processes. For another user's, use sudo."],
+    [/Interactive authentication required/, "Starting, stopping and enabling services changes the whole server, so it needs root: put sudo in front, e.g. sudo systemctl restart nginx."],
+    [/can be installed with:$/, "That program isn't installed. Ubuntu tells you which package has it: install it with the sudo apt install line it shows."],
+    [/Could not open lock file|are you root\?/, "Installing and updating packages changes the whole server: run apt with sudo."],
+    [/Couldn't connect to server|Connection refused$/, "Nothing is listening on that address and port. Is the service running (systemctl status)? Is it listening where you think (sudo ss -tlnp)?"],
+    [/Could not resolve host|Name or service not known|Temporary failure in name resolution/, "That name doesn't resolve to an IP address. Check the spelling, /etc/hosts and DNS (dig NAME)."],
+    [/test failed$/, "nginx found a mistake in its config: the line above says which file and line. Fix it, then run sudo nginx -t again before reloading."],
+    [/errors in crontab file|missing newline before EOF/, "cron rejected the crontab. Each line needs five time fields (minute hour day-of-month month day-of-week), then the command, and the file must end with a newline."],
+    [/^Job for .* failed/, "The service didn't start. Look at why: systemctl status UNIT shows the last log lines, journalctl -xeu UNIT shows more."],
     [/: command not found$/, "Bash doesn't know that command. Check the spelling (commands are lower-case), or run it with its path if it's a script in this folder: ./name"],
     [/Permission denied/, "You don't have permission for that. Check the owner and mode with ls -l. If it's a system file, you may need sudo (Module 1 lab 8)."],
     [/No such file or directory/, "That path doesn't exist from where you are. Check pwd, use ls to look around, and remember Linux names are case-sensitive."],

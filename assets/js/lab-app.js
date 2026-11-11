@@ -693,7 +693,7 @@
     if (TERM && e.key === "Tab") {
       e.preventDefault();
       var inp = this, src = state.drill || state.lab;
-      runner.call({ type: "complete", code: termHist, line: inp.value, files: src.files || {}, prelude: src.prelude || "" }).then(function (res) {
+      runner.call({ type: "complete", code: termHist, line: inp.value, files: src.files || {}, prelude: src.prelude || "", system: src.system }).then(function (res) {
         if (res.line !== undefined) inp.value = res.line;
         if (res.options && res.options.length) print(res.options.join("   "), "sys");
       });
@@ -737,7 +737,7 @@
   }
   function termCall(printFrom, quiet) {
     var lab = state.lab, d = state.drill, src = d || lab;
-    var msg = { type: "run", code: termHist, printFrom: printFrom, files: src.files || {}, prelude: src.prelude || "",
+    var msg = { type: "run", code: termHist, printFrom: printFrom, files: src.files || {}, prelude: src.prelude || "", system: src.system,
       checks: d ? [{ id: d.id, code: d.check }] : lab.objectives.map(function (o) { return { id: o.id, code: o.check }; }) };
     state.running = true;
     return runner.call(msg).then(function (res) {

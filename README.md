@@ -10,7 +10,7 @@ Hands-on labs for learning Python, PowerShell, Linux, Git & GitHub, Networking, 
 |---|-------|--------|
 | 1 | Python | Complete: 4 modules, 32 labs, 4 capstone projects and 99 practice drills |
 | 2 | PowerShell | Complete: 32 labs, 4 capstone projects and 108 practice drills, on a simulated PowerShell 7 (with simulated Windows GUI windows, scripts run like programs, Pester and PSScriptAnalyzer) |
-| 3 | Linux | Module 1 open: 9 labs, a capstone project and 30 practice drills (36 labs planned), typed into a simulated Bash terminal on an Ubuntu 24.04 server |
+| 3 | Linux | Modules 1-2 open: 17 labs, 2 capstone projects and 57 practice drills (36 labs planned), typed into a simulated Bash terminal on an Ubuntu 24.04 server with real services, packages, disks, a network and SSH to other servers |
 | 4 | Git & GitHub | planned |
 | 5 | Networking | planned |
 | 6 | DevOps | planned |

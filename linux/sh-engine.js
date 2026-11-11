@@ -78,6 +78,7 @@
       if (r.node.type === "d") return "EISDIR";
       if (!can(sess, r.node, "w")) return "EACCES";
       r.node.content = append ? r.node.content + content : content;
+      if (r.node.size != null) { if (append) r.node.size += new TextEncoder().encode(content).length; else delete r.node.size; }
       r.node.mtime = sess.sys.now;
       return null;
     }
@@ -308,10 +309,12 @@
       var op = this.peekOp();
       if (op === ")" || op === ";;") break;
       if (op && op !== "(" && op !== "\n") this.err(op);
+      var startI = this.i;
       var node = this.andOr();
       this.ws();
+      var srcText = this.s.slice(startI, this.i).trim();
       var sep = this.peekOp();
-      if (sep === ";" || sep === "&") { this.i++; items.push({ node: node, bg: sep === "&" }); continue; }
+      if (sep === ";" || sep === "&") { this.i++; items.push({ node: node, bg: sep === "&", src: srcText }); continue; }
       items.push({ node: node, bg: false });
       if (sep === "\n") { this.i++; this.readHeredocs(); continue; }
       break;
@@ -867,6 +870,7 @@
     var code = sess.lastExit;
     for (var k = 0; k < list.items.length; k++) {
       var it = list.items[k];
+      if (it.bg && api.startJob) { code = api.startJob(sess, it, io); sess.lastExit = code; continue; }
       if (it.bg) {
         // No job control in the lab: run it now, report a job number like bash does.
         var jobs = (sess.root || sess).jobs = ((sess.root || sess).jobs || 0) + 1;
@@ -975,6 +979,9 @@
   }
   function execPipe(sess, node, io) {
     var input = io.stdin, codes = [];
+    var prevPipe = sess.sys.pipeline;
+    if (node.cmds.length > 1) sess.sys.pipeline = { cmds: node.cmds, sess: sess };
+    try {
     for (var k = 0; k < node.cmds.length; k++) {
       var last = k === node.cmds.length - 1;
       var buf = [];
@@ -987,6 +994,7 @@
       codes.push(code);
       input = buf.join("");
     }
+    } finally { sess.sys.pipeline = prevPipe; }
     var c = codes[codes.length - 1];
     if (sess.opts.pipefail) for (var j = codes.length - 1; j >= 0; j--) if (codes[j] !== 0) { c = codes[j]; break; }
     if (node.neg) c = c === 0 ? 1 : 0;
@@ -1122,7 +1130,8 @@
       var r2 = lookup(sess, dirs[k] + "/" + name);
       if (r2.node && r2.node.type === "f" && can(sess, r2.node, "x")) return classify(r2.node, r2.path);
     }
-    return { error: name + ": command not found", code: 127 };
+    var hint = api.notFound && api.notFound(sess, name);
+    return { error: hint || name + ": command not found", code: 127 };
   }
   function classify(node, path) {
     var m = /^\x7fELF:(\S+)/.exec(node.content);
@@ -1239,7 +1248,7 @@
   var SYS_HOOKS = [];
   function makeSystem(opts) {
     opts = opts || {};
-    var sys = { host: "kc-web-01", now: NOW, root: dirNode(493, 0, 0, NOW - 400 * DAY), pidSeq: 0, actions: [], seed: 7 };
+    var sys = { host: opts.host || "kc-web-01", now: NOW, root: dirNode(493, 0, 0, NOW - 400 * DAY), pidSeq: 0, actions: [], seed: 7 };
     SYS_HOOKS.forEach(function (h) { h(sys, opts); });
     // Lab files: relative paths go in /home/dev; values are text or {content, mode, owner, group, ageDays}.
     var home = "/home/dev";
@@ -1259,11 +1268,14 @@
       // folders created for lab files belong to dev when they're inside the home
       var dirPath = path.slice(0, path.lastIndexOf("/"));
       if (dirPath.indexOf(home) === 0) { var cur = home; splitPath(dirPath.slice(home.length)).forEach(function (seg) { cur += "/" + seg; mkdirs(sys, cur, 509, 1000, 1000); }); }
-      put(sys, path, content, mode, uidOf(sys, owner), gidOf(sys, group), mt);
+      var fnode = put(sys, path, content, mode, uidOf(sys, owner), gidOf(sys, group), mt);
+      if (v && typeof v === "object" && v.size != null) fnode.size = typeof v.size === "number" ? v.size : parseSize(v.size);
     });
     if (opts.system) opts.system(sys);
+    (api.POST_HOOKS || []).forEach(function (h) { h(sys, opts); });
     return sys;
   }
+  function parseSize(s) { var m = /^([\d.]+)\s*([KMGT]?)/i.exec(String(s)); return m ? Math.round(+m[1] * Math.pow(1024, " KMGT".indexOf((m[2] || " ").toUpperCase()))) : 0; }
   function uidOf(sys, name) { var u = userByName(sys, name); return u ? u.uid : 0; }
   function gidOf(sys, name) { var g = groupByName(sys, name); return g ? g.gid : 0; }
 
@@ -1288,7 +1300,7 @@
       if (e instanceof ParseError) { termWrite(sess, e.message + "\n", true); code = 2; }
       else if (e instanceof ExitSignal) {
         code = e.code;
-        if (sess.userStack.length) sess.userStack.pop(); // leave a sudo -i / su shell
+        if (sess.userStack.length) { var popped = sess.userStack.pop(); termWrite(sess, popped.exitMsg || "logout\n", false); } // leave a sudo -i / su / ssh shell
         else termWrite(sess, "logout\n(This lab's terminal stays open.)\n", false);
       }
       else if (e instanceof StepLimit) { termWrite(sess, "^C\n(Stopped: the command ran too long. An endless loop?)\n", true); code = 130; }
@@ -1298,6 +1310,7 @@
     }
     shell.lastExit = code;
     sess.lastExit = code;
+    if (api.afterLine) api.afterLine(sess, io);
     return { code: code, lines: termLines(sess.term), clear: !!sess.cleared };
   }
   // A login shell reads ~/.bashrc (through ~/.profile): aliases like ll come from there.
@@ -1317,6 +1330,7 @@
     passwd: passwd, groups: groups, userByName: userByName, userById: userById, groupByName: groupByName, groupById: groupById, uname: uname, gname: gname, supplementary: supplementary, setUser: setUser,
     getVar: lookupVar, setVar: setVar, exportedEnv: exportedEnv, parse: parse, runSource: runSource, runLine: runLine, runCommand: runCommand, runScriptFile: runScriptFile, resolveCommand: resolveCommand, execFound: execFound,
     expandWord: expandWord, expandString: expandString, glob: glob, globMatch: globMatch, globRegexSrc: globRegexSrc, sortNames: sortNames, arith: arith,
+    parseSize: parseSize, isPlainFailure: isPlainFailure, execNode: execNode, ExitSignalCls: ExitSignal, StepLimit: StepLimit,
     login: login, unaryTest: unaryTest, binaryTest: binaryTest, termLines: termLines, termWrite: termWrite, prompt: prompt, activeShell: activeShell, step: step, readSys: readSys, uidOf: uidOf, gidOf: gidOf
   };
   root.ShEngine = api;
