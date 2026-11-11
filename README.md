@@ -14,7 +14,7 @@ Hands-on labs for learning Python, PowerShell, Linux, Git & GitHub, Networking, 
 | 4 | Git & GitHub | Module 1 open: 9 labs, a capstone project and 30 practice drills (36 labs planned), typed into a simulated Git 2.43 (real commit IDs, merges, conflicts, stash, bisect) with an editor panel for resolving conflicts |
 | 5 | Networking | outline published (networking/): 5 modules, 48 labs planned (OSI layers, ports, packet capture, attacks & detection, defence, cloud networks); labs not built yet |
 | 6 | DevOps | outline published (devops/): 5 modules, 49 labs planned (Docker, CI/CD in GitHub Actions and Bamboo, Terraform & Ansible, Kubernetes, observability); labs not built yet |
-| 7 | AppSec & Security | planned |
+| 7 | AppSec & Security | outline published (appsec/): 5 modules, 46 labs planned (web basics & threat modeling, injection & XSS, auth & access control, API & LLM security, AppSec in the pipeline) on a simulated Kestrel Shop web app; labs not built yet |
 
 ## How it works
 
@@ -44,5 +44,6 @@ linux/                Linux track (simulated Bash on an Ubuntu server, terminal-
 git/                  Git & GitHub track (simulated git on the same Bash engine, on a developer laptop)
 networking/           Networking track outline page (labs not built yet)
 devops/               DevOps track outline page (labs not built yet)
+appsec/               AppSec & Security track outline page (labs not built yet)
 prototype/night-shift the earlier Linux/Networking/DevOps prototype, to be reused by later tracks
 ```

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AppSec outline · sudo learn</title>
+<meta name="description" content="The planned AppSec &amp; Security track: 5 modules and 46 hands-on labs. Attack a simulated web shop, then fix its code: injection, XSS, auth, access control, APIs, and AppSec in the pipeline.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e13'/%3E%3Cpath d='M7 10l6 6-6 6' stroke='%234ade80' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='16' y='20' width='9' height='3' rx='1' fill='%234ade80'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  :root { --c: #4ade80; --c-bg: rgba(74,222,128,0.08); --c-line: rgba(74,222,128,0.35); }
+  body { min-height: 100vh; background: radial-gradient(1000px 460px at 10% -10%, rgba(74,222,128,0.07), transparent 60%), var(--bg); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; gap: 12px; }
+  header.top .logo { font-size: 18px; }
+  .crumb { font: 500 12.5px var(--font-mono); color: var(--muted); }
+
+  .intro { padding: 26px 0 30px; }
+  .intro .kicker { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .pill.c { color: var(--c); border-color: var(--c-line); background: var(--c-bg); }
+  .intro h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(34px, 5.5vw, 54px); line-height: 1; letter-spacing: -0.03em; margin: 0 0 14px; }
+  .intro h1 span { color: var(--c); }
+  .intro p { color: var(--text-2); font-size: 16px; max-width: 40em; margin: 0 0 10px; }
+  .intro p.note { color: var(--muted); font-size: 14px; }
+
+  .facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 18px 0 40px; }
+  .facts > div { background: var(--panel); padding: 14px 16px; }
+  .facts small { display: block; font: 500 11px var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
+  .facts b { font: 700 20px var(--font-mono); }
+
+  h2.sec { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.02em; margin: 0 0 6px; }
+  p.sub { color: var(--muted); margin: 0 0 18px; }
+  section { margin-bottom: 46px; }
+
+  /* The DevOps loop */
+  .loop { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; counter-reset: st; }
+  .loop .st { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; position: relative; }
+  .loop .st::before { counter-increment: st; content: counter(st); position: absolute; top: 10px; right: 12px; font: 700 11px var(--font-mono); color: var(--dim); }
+  .loop b { display: block; font-family: var(--font-display); font-size: 16px; color: var(--c); }
+  .loop span { display: block; color: var(--text-2); font-size: 13px; margin-top: 2px; }
+  .loop small { display: block; font: 500 11px var(--font-mono); color: var(--muted); margin-top: 8px; }
+  .shield.warn { background: var(--amber-bg); border-color: rgba(251,191,36,0.3); }
+  .shield.warn b { color: var(--amber); }
+  .shield { margin-top: 8px; background: var(--green-bg); border: 1px solid rgba(74,222,128,0.3); border-radius: 10px; padding: 10px 14px; color: var(--text-2); font-size: 13.5px; }
+  .shield b { color: var(--green); }
+
+  /* Modules */
+  .mod { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+  .mod > header { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .mod .mn { font: 700 13px var(--font-mono); width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--c-bg); color: var(--c); border: 1px solid var(--c-line); flex-shrink: 0; }
+  .mod h3 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 20px; flex: 1; min-width: 10em; }
+  .mod .cnt { font: 500 12px var(--font-mono); color: var(--muted); }
+  .mod .goal { margin: 0; padding: 12px 18px 4px; color: var(--text-2); font-size: 14px; }
+  .labs { list-style: none; margin: 0; padding: 6px 8px 10px; }
+  .labs li { display: grid; grid-template-columns: 76px 1fr auto; gap: 4px 12px; align-items: baseline; padding: 9px 10px; border-radius: 8px; }
+  .labs li:hover { background: var(--panel-2); }
+  .labs .id { font: 600 12px var(--font-mono); color: var(--dim); }
+  .labs .t b { font-weight: 600; color: var(--text); }
+  .labs .t span { display: block; color: var(--muted); font-size: 13.5px; }
+  .labs .tool { font: 600 10.5px/1 var(--font-mono); color: var(--c); border: 1px solid var(--c-line); border-radius: 999px; padding: 4px 7px; white-space: nowrap; }
+  .labs li.cap .id { color: var(--amber); }
+  .labs li.cap .t b::before { content: "★ "; color: var(--amber); }
+  .labs li.cap .tool { color: var(--amber); border-color: rgba(251,191,36,0.35); }
+
+  /* Tools */
+  .tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .tgrp { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .tgrp h4 { margin: 0 0 8px; font-family: var(--font-display); font-size: 16px; }
+  .tgrp ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+  .tgrp li { font-size: 13.5px; color: var(--text-2); }
+  .tgrp li code { color: var(--c); font-size: 12.5px; }
+
+  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .how > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .how b { display: block; font-family: var(--font-display); font-size: 16px; margin-bottom: 4px; }
+  .how p { margin: 0; color: var(--text-2); font-size: 13.5px; }
+
+  footer { border-top: 1px solid var(--line); padding: 22px 0 40px; color: var(--dim); font-size: 13px; }
+
+  @media (max-width: 760px) {
+    .facts { grid-template-columns: 1fr 1fr; }
+    .loop { grid-template-columns: 1fr 1fr; }
+    .how { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 16px; }
+    .labs li { grid-template-columns: 1fr auto; }
+    .labs .id { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="logo" href="../"><span class="sig">$</span>&nbsp;sudo learn<span class="cur"></span></a>
+    <a class="crumb" href="../#path">← all tracks</a>
+  </header>
+
+  <div class="intro">
+    <div class="kicker"><span class="pill c">track 07</span><span class="pill amber">outline · labs not built yet</span></div>
+    <h1>AppSec: <span>break it, then fix it.</span></h1>
+    <p>Kestrel Shop is a web app full of security holes. Find them the way an attacker would, exploit them safely, then fix the code and prove the fix holds. By the end you'll review code, run scanners in the pipeline and write findings like an AppSec engineer.</p>
+    <p class="note">This is the plan for the track. It goes much deeper than the secure-coding labs in the Python track: a whole app to attack instead of one bug per lab.</p>
+  </div>
+
+  <div class="facts">
+    <div><small>Modules</small><b>5</b></div>
+    <div><small>Labs</small><b>46</b></div>
+    <div><small>Practice drills</small><b>3 per lab</b></div>
+    <div><small>Target app</small><b>Kestrel Shop</b></div>
+  </div>
+
+  <section>
+    <h2 class="sec">How every lab goes</h2>
+    <p class="sub">Each vulnerability is worked from both sides: attacker first, then defender.</p>
+    <div class="loop" id="loop"></div>
+    <div class="shield warn"><b>Only attack what you're allowed to.</b> Every attack in this track hits Kestrel's own simulated app. Trying these techniques on real sites without written permission is illegal, and SEC-506 covers how real testers get that permission and report what they find.</div>
+  </section>
+
+  <section>
+    <h2 class="sec">Modules</h2>
+    <p class="sub">Each module ends with a capstone (★): a bigger ticket with no hints.</p>
+    <div id="mods"></div>
+  </section>
+
+  <section>
+    <h2 class="sec">Tools you'll use</h2>
+    <p class="sub">All simulated in your browser. Nothing to install, nothing to pay for.</p>
+    <div class="tools" id="tools"></div>
+  </section>
+
+  <section>
+    <h2 class="sec">How the labs will work</h2>
+    <div class="how">
+      <div><b>A request tool</b><p>Capture a request, change it, replay it, and see what the server does. <code>curl</code> works in the terminal too.</p></div>
+      <div><b>Real code to fix</b><p>Kestrel Shop's backend is Python, so you can read it and fix it in the editor. Frontend bugs like XSS are in JavaScript.</p></div>
+      <div><b>Proof, not promises</b><p>A fix only counts when the exploit stops working and a regression test keeps it from coming back.</p></div>
+    </div>
+  </section>
+
+  <footer>AppSec &amp; Security is the seventh and last track. It will open after the DevOps track.</footer>
+</div>
+
+<script>
+(function () {
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  var LOOP = [
+    ["Find", "Map the app and spot the weak point", "recon"],
+    ["Exploit", "Prove the bug is real, safely", "attacker"],
+    ["Fix", "Change the code, not just the symptom", "defender"],
+    ["Prove", "Exploit fails, regression test passes", "defender"]
+  ];
+  document.getElementById("loop").innerHTML = LOOP.map(function (s) {
+    return '<div class="st"><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span><small>' + esc(s[2]) + '</small></div>';
+  }).join("");
+
+  // [id, title, category, what you do, capstone]
+  var MODS = [
+    { n: 1, title: "How web apps work and break", goal: "How requests, cookies and browsers really work, where apps go wrong, and how to think like an attacker before writing code.", labs: [
+      ["101", "Inside a web request", "Web basics", "Requests, cookies and sessions, and intercepting traffic with a proxy."],
+      ["102", "OWASP Top 10 & recon", "Recon", "Tour the Top 10, then map Kestrel Shop: pages, hidden parameters, JavaScript files."],
+      ["103", "Security headers & cookie flags", "Config", "CSP, HSTS, framing protection, HttpOnly, Secure, SameSite."],
+      ["104", "Same-origin policy & CORS", "Config", "What the browser blocks, and the CORS mistakes that undo it."],
+      ["105", "Validate input, encode output", "Design", "The two habits behind most fixes in this track."],
+      ["106", "Errors & information leaks", "Errors", "Stack traces, debug endpoints, and failing safely."],
+      ["107", "Security logging", "Logging", "What to log so attacks get noticed, and what never to log."],
+      ["108", "Threat modeling", "Design", "STRIDE and data-flow diagrams: find problems before they're coded."],
+      ["109", "Map Kestrel Shop", "Recon", "Map the whole attack surface and threat-model it.", true]
+    ] },
+    { n: 2, title: "Injection & client-side attacks", goal: "When user input becomes code: on the server, in the database, and in the browser.", labs: [
+      ["201", "SQL injection in depth", "Injection", "UNION, blind and second-order attacks. Parameterised queries and ORM pitfalls."],
+      ["202", "NoSQL injection", "Injection", "Operator injection in document databases."],
+      ["203", "Command & argument injection", "Injection", "Shell commands built from user input, and safe ways to run programs."],
+      ["204", "XSS, all three kinds", "XSS", "Reflected, stored and DOM-based. Stopping it with encoding and CSP."],
+      ["205", "Template injection", "Injection", "When a template engine runs the attacker's code."],
+      ["206", "XXE & insecure deserialisation", "Injection", "Malicious XML and objects that run code when they're loaded."],
+      ["207", "SSRF", "SSRF", "Make the server fetch for you, up to cloud credentials at 169.254.169.254."],
+      ["208", "File upload flaws", "Uploads", "Web shells, path tricks and safe upload handling."],
+      ["209", "CSRF & clickjacking", "Browser", "Making a logged-in user act without knowing it."],
+      ["210", "The bug chain", "Chain", "Exploit a chain of bugs in Kestrel Shop, then fix every link.", true]
+    ] },
+    { n: 3, title: "Authentication, sessions & access control", goal: "Who you are, how the app remembers you, and what you're allowed to do.", labs: [
+      ["301", "Password storage", "Auth", "bcrypt and argon2, salts, and why fast hashes fail."],
+      ["302", "Login defences", "Auth", "Brute force, credential stuffing, account enumeration, MFA."],
+      ["303", "Password reset flaws", "Auth", "Guessable tokens, host header tricks, links that never expire."],
+      ["304", "Sessions", "Sessions", "Fixation, timeouts, and logging out properly."],
+      ["305", "JWT attacks", "Tokens", "alg: none, weak secrets, kid tricks, and safe validation."],
+      ["306", "OAuth 2.0 & OpenID Connect", "Tokens", "redirect_uri, state and PKCE: the details that matter."],
+      ["307", "Broken access control", "Access", "IDOR, privilege escalation and forced browsing."],
+      ["308", "Business logic flaws", "Logic", "Race conditions, negative quantities, price tampering."],
+      ["309", "Account takeover", "Chain", "Take over an account, then close every hole you used.", true]
+    ] },
+    { n: 4, title: "API & modern app security", goal: "APIs, integrations, crypto done right, and the new risks of LLM-powered features.", labs: [
+      ["401", "OWASP API Security Top 10", "API", "How API risks differ from web page risks."],
+      ["402", "BOLA & BFLA", "API", "Broken object-level and function-level authorisation."],
+      ["403", "Mass assignment & data exposure", "API", "Fields you shouldn't be able to set, and data you shouldn't get back."],
+      ["404", "Rate limits & resource exhaustion", "API", "Expensive endpoints, pagination abuse, missing limits."],
+      ["405", "GraphQL security", "API", "Introspection, query depth, batching attacks."],
+      ["406", "Webhooks & integrations", "API", "Verify signatures and don't trust what arrives."],
+      ["407", "Cryptography for developers", "Crypto", "Secure randomness, encrypting data at rest, never inventing your own crypto."],
+      ["408", "LLM app security", "LLM", "Prompt injection and the OWASP Top 10 for LLM applications."],
+      ["409", "Pentest Kestrel's API", "Report", "Test the whole API and write up the findings.", true]
+    ] },
+    { n: 5, title: "AppSec in the pipeline & the program", goal: "Find bugs at scale, decide what to fix first, and build security into how the team works.", labs: [
+      ["501", "Secure code review", "Review", "Spot vulnerabilities in a pull request's diff."],
+      ["502", "SAST with Semgrep", "SAST", "Write your own rules and sort real findings from false positives."],
+      ["503", "Dependency scanning", "SCA", "Which vulnerable libraries actually matter to your app."],
+      ["504", "DAST with OWASP ZAP", "DAST", "A baseline scan of the running app, in CI."],
+      ["505", "Vulnerability management", "Program", "CVSS and EPSS scores, prioritising, fix deadlines."],
+      ["506", "Reports & disclosure", "Report", "Write a finding people act on. Bug bounties and responsible disclosure."],
+      ["507", "Secure SDLC", "Program", "OWASP ASVS, security requirements, security champions."],
+      ["508", "Fixing it right", "Fix", "The fix plus a regression test, so the bug can't come back."],
+      ["509", "AppSec review of a new feature", "Review", "Threat model, code review, scans and a report, start to finish.", true]
+    ] }
+  ];
+  document.getElementById("mods").innerHTML = MODS.map(function (m) {
+    return '<article class="mod"><header><span class="mn">M' + m.n + '</span><h3>' + esc(m.title) + '</h3><span class="cnt">' + m.labs.length + ' labs</span></header>' +
+      '<p class="goal">' + esc(m.goal) + '</p><ul class="labs">' + m.labs.map(function (l) {
+        return '<li' + (l[4] ? ' class="cap"' : '') + '><span class="id">SEC-' + l[0] + '</span><span class="t"><b>' + esc(l[1]) + '</b><span>' + esc(l[3]) +
+          '</span></span><span class="tool">' + esc(l[2]) + '</span></li>';
+      }).join("") + '</ul></article>';
+  }).join("");
+
+  var TOOLS = [
+    ["Attacking", [["request tool", "capture, edit and replay requests"], ["curl", "requests from the terminal"], ["devtools", "the browser's own inspector"]]],
+    ["Fixing", [["editor", "Kestrel Shop's Python and JavaScript"], ["pytest", "regression tests for every fix"]]],
+    ["Scanning", [["semgrep", "static analysis (SAST)"], ["zap", "dynamic scanning (DAST)"], ["pip-audit", "vulnerable dependencies (SCA)"]]],
+    ["Tokens & crypto", [["jwt", "decode and check tokens"], ["openssl", "keys, hashes, randomness"]]],
+    ["Reporting", [["CVSS", "severity scoring"], ["ASVS", "the requirements checklist"]]]
+  ];
+  document.getElementById("tools").innerHTML = TOOLS.map(function (g) {
+    return '<div class="tgrp"><h4>' + esc(g[0]) + '</h4><ul>' + g[1].map(function (t) {
+      return '<li><code>' + esc(t[0]) + '</code> ' + esc(t[1]) + '</li>';
+    }).join("") + '</ul></div>';
+  }).join("");
+})();
+</script>
+</body>
+</html>

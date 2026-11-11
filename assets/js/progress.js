@@ -39,9 +39,9 @@
     { id: "devops", name: "DevOps", path: "devops/", status: "outline", color: "#a78bfa", labs: 49,
       blurb: "Containers, CI/CD pipelines in GitHub Actions and Bamboo, infrastructure as code, Kubernetes and observability, with security at every step.",
       topics: ["Docker", "CI/CD", "Terraform & Ansible", "Kubernetes", "Observability"] },
-    { id: "appsec", name: "AppSec & Security", status: "soon", color: "#4ade80", labs: 0,
-      blurb: "OWASP Top 10, secure code review, and security scanning in pipelines.",
-      topics: ["OWASP Top 10", "Code review", "SAST/DAST", "Threat modeling"] }
+    { id: "appsec", name: "AppSec & Security", path: "appsec/", status: "outline", color: "#4ade80", labs: 46,
+      blurb: "Attack a deliberately vulnerable web shop, then fix its code: injection, XSS, auth, access control, APIs, and AppSec in the pipeline.",
+      topics: ["OWASP Top 10", "Auth & access", "API security", "Code review", "SAST/DAST"] }
   ];
 
   var SL = {
