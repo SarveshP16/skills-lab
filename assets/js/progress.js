@@ -36,9 +36,9 @@
     { id: "networking", name: "Networking", path: "networking/", status: "outline", color: "#22d3ee", labs: 48,
       blurb: "Climb the OSI layers, learn the ports that matter, read captured traffic, catch attacks and lock down networks, on-prem and in the cloud.",
       topics: ["OSI layers", "Ports", "Packet capture", "Attacks & defence", "Cloud networks"] },
-    { id: "devops", name: "DevOps", status: "soon", color: "#a78bfa", labs: 0,
-      blurb: "Containers, CI/CD pipelines and infrastructure as code.",
-      topics: ["Docker", "CI/CD", "IaC", "Monitoring"] },
+    { id: "devops", name: "DevOps", path: "devops/", status: "outline", color: "#a78bfa", labs: 49,
+      blurb: "Containers, CI/CD pipelines in GitHub Actions and Bamboo, infrastructure as code, Kubernetes and observability, with security at every step.",
+      topics: ["Docker", "CI/CD", "Terraform & Ansible", "Kubernetes", "Observability"] },
     { id: "appsec", name: "AppSec & Security", status: "soon", color: "#4ade80", labs: 0,
       blurb: "OWASP Top 10, secure code review, and security scanning in pipelines.",
       topics: ["OWASP Top 10", "Code review", "SAST/DAST", "Threat modeling"] }

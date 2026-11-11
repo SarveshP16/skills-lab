@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevOps outline · sudo learn</title>
+<meta name="description" content="The planned DevOps track: 5 modules and 49 hands-on labs, from Docker and CI/CD (GitHub Actions and Bamboo) to Terraform, Ansible, Kubernetes and observability.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e13'/%3E%3Cpath d='M7 10l6 6-6 6' stroke='%234ade80' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='16' y='20' width='9' height='3' rx='1' fill='%234ade80'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  :root { --c: #a78bfa; --c-bg: rgba(167,139,250,0.08); --c-line: rgba(167,139,250,0.35); }
+  body { min-height: 100vh; background: radial-gradient(1000px 460px at 10% -10%, rgba(167,139,250,0.08), transparent 60%), var(--bg); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; gap: 12px; }
+  header.top .logo { font-size: 18px; }
+  .crumb { font: 500 12.5px var(--font-mono); color: var(--muted); }
+
+  .intro { padding: 26px 0 30px; }
+  .intro .kicker { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .pill.c { color: var(--c); border-color: var(--c-line); background: var(--c-bg); }
+  .intro h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(34px, 5.5vw, 54px); line-height: 1; letter-spacing: -0.03em; margin: 0 0 14px; }
+  .intro h1 span { color: var(--c); }
+  .intro p { color: var(--text-2); font-size: 16px; max-width: 40em; margin: 0 0 10px; }
+  .intro p.note { color: var(--muted); font-size: 14px; }
+
+  .facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 18px 0 40px; }
+  .facts > div { background: var(--panel); padding: 14px 16px; }
+  .facts small { display: block; font: 500 11px var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
+  .facts b { font: 700 20px var(--font-mono); }
+
+  h2.sec { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.02em; margin: 0 0 6px; }
+  p.sub { color: var(--muted); margin: 0 0 18px; }
+  section { margin-bottom: 46px; }
+
+  /* The DevOps loop */
+  .loop { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; counter-reset: st; }
+  .loop .st { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; position: relative; }
+  .loop .st::before { counter-increment: st; content: counter(st); position: absolute; top: 10px; right: 12px; font: 700 11px var(--font-mono); color: var(--dim); }
+  .loop b { display: block; font-family: var(--font-display); font-size: 16px; color: var(--c); }
+  .loop span { display: block; color: var(--text-2); font-size: 13px; margin-top: 2px; }
+  .loop small { display: block; font: 500 11px var(--font-mono); color: var(--muted); margin-top: 8px; }
+  .shield { margin-top: 8px; background: var(--green-bg); border: 1px solid rgba(74,222,128,0.3); border-radius: 10px; padding: 10px 14px; color: var(--text-2); font-size: 13.5px; }
+  .shield b { color: var(--green); }
+
+  /* Modules */
+  .mod { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+  .mod > header { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .mod .mn { font: 700 13px var(--font-mono); width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--c-bg); color: var(--c); border: 1px solid var(--c-line); flex-shrink: 0; }
+  .mod h3 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 20px; flex: 1; min-width: 10em; }
+  .mod .cnt { font: 500 12px var(--font-mono); color: var(--muted); }
+  .mod .goal { margin: 0; padding: 12px 18px 4px; color: var(--text-2); font-size: 14px; }
+  .labs { list-style: none; margin: 0; padding: 6px 8px 10px; }
+  .labs li { display: grid; grid-template-columns: 76px 1fr auto; gap: 4px 12px; align-items: baseline; padding: 9px 10px; border-radius: 8px; }
+  .labs li:hover { background: var(--panel-2); }
+  .labs .id { font: 600 12px var(--font-mono); color: var(--dim); }
+  .labs .t b { font-weight: 600; color: var(--text); }
+  .labs .t span { display: block; color: var(--muted); font-size: 13.5px; }
+  .labs .tool { font: 600 10.5px/1 var(--font-mono); color: var(--c); border: 1px solid var(--c-line); border-radius: 999px; padding: 4px 7px; white-space: nowrap; }
+  .labs li.cap .id { color: var(--amber); }
+  .labs li.cap .t b::before { content: "★ "; color: var(--amber); }
+  .labs li.cap .tool { color: var(--amber); border-color: rgba(251,191,36,0.35); }
+
+  /* Tools */
+  .tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .tgrp { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .tgrp h4 { margin: 0 0 8px; font-family: var(--font-display); font-size: 16px; }
+  .tgrp ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+  .tgrp li { font-size: 13.5px; color: var(--text-2); }
+  .tgrp li code { color: var(--c); font-size: 12.5px; }
+
+  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .how > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .how b { display: block; font-family: var(--font-display); font-size: 16px; margin-bottom: 4px; }
+  .how p { margin: 0; color: var(--text-2); font-size: 13.5px; }
+
+  footer { border-top: 1px solid var(--line); padding: 22px 0 40px; color: var(--dim); font-size: 13px; }
+
+  @media (max-width: 760px) {
+    .facts { grid-template-columns: 1fr 1fr; }
+    .loop { grid-template-columns: 1fr 1fr; }
+    .how { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 16px; }
+    .labs li { grid-template-columns: 1fr auto; }
+    .labs .id { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="logo" href="../"><span class="sig">$</span>&nbsp;sudo learn<span class="cur"></span></a>
+    <a class="crumb" href="../#path">← all tracks</a>
+  </header>
+
+  <div class="intro">
+    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">outline · labs not built yet</span></div>
+    <h1>DevOps: <span>from commit to production.</span></h1>
+    <p>Package apps in containers, build pipelines that test, scan and ship them, describe whole environments as code, run them on Kubernetes, and know when something breaks before your users do.</p>
+    <p class="note">This is the plan for the track. The labs will run in the same simulated terminal as the Linux and Git tracks, with an editor panel for Dockerfiles, YAML and Terraform.</p>
+  </div>
+
+  <div class="facts">
+    <div><small>Modules</small><b>5</b></div>
+    <div><small>Labs</small><b>49</b></div>
+    <div><small>Practice drills</small><b>3 per lab</b></div>
+    <div><small>Tools</small><b>~20</b></div>
+  </div>
+
+  <section>
+    <h2 class="sec">The DevOps loop</h2>
+    <p class="sub">Every change goes round this loop. Each module of the track covers part of it.</p>
+    <div class="loop" id="loop"></div>
+    <div class="shield"><b>Security at every step.</b> Scanning images, gating pipelines, checking infrastructure code, locking down pods and watching for attacks are part of each module, not an add-on at the end. That's what makes it DevSecOps.</div>
+  </section>
+
+  <section>
+    <h2 class="sec">Modules</h2>
+    <p class="sub">Each module ends with a capstone (★): a bigger ticket with no hints.</p>
+    <div id="mods"></div>
+  </section>
+
+  <section>
+    <h2 class="sec">Tools you'll use</h2>
+    <p class="sub">All simulated in your browser. Nothing to install, nothing to pay for.</p>
+    <div class="tools" id="tools"></div>
+  </section>
+
+  <section>
+    <h2 class="sec">How the labs will work</h2>
+    <div class="how">
+      <div><b>A real terminal</b><p>Type <code>docker</code>, <code>kubectl</code>, <code>terraform</code>, <code>ansible</code>, <code>helm</code> and <code>aws</code> commands on simulated machines. Tasks tick as you go.</p></div>
+      <div><b>An editor panel</b><p>Write Dockerfiles, GitHub Actions workflows, Bamboo Specs, Terraform and Kubernetes YAML, then run them and read the result.</p></div>
+      <div><b>Safe to break</b><p>Bad deploys, failed pipelines and outages only hit Kestrel's simulated systems, so you can practise rollbacks and incident response for real.</p></div>
+    </div>
+  </section>
+
+  <footer>DevOps is the sixth track. It will open after the Git &amp; GitHub, Linux and Networking tracks are finished.</footer>
+</div>
+
+<script>
+(function () {
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  var LOOP = [
+    ["Code", "Version control and reviews", "Git track"],
+    ["Build", "Package the app as an image", "Module 1"],
+    ["Test & scan", "Tests, quality and security gates", "Module 2"],
+    ["Release", "Versions, signing, promotion", "Module 2"],
+    ["Provision", "Servers and cloud from code", "Module 3"],
+    ["Deploy", "Roll out on Kubernetes", "Module 4"],
+    ["Operate", "Scale, heal, roll back", "Module 4"],
+    ["Monitor", "Metrics, logs, traces, alerts", "Module 5"]
+  ];
+  document.getElementById("loop").innerHTML = LOOP.map(function (s) {
+    return '<div class="st"><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span><small>' + esc(s[2]) + '</small></div>';
+  }).join("");
+
+  // [id, title, tool, what you do, capstone]
+  var MODS = [
+    { n: 1, title: "Containers with Docker", goal: "Package an app so it runs the same everywhere, and keep the image small and safe.", labs: [
+      ["101", "Containers vs virtual machines", "Docker", "Images, layers, and what a container really isolates."],
+      ["102", "Running containers", "Docker", "run, ps, logs, exec, stop and rm."],
+      ["103", "Images & registries", "Docker", "Tags vs digests, pulling and pushing."],
+      ["104", "Your first Dockerfile", "Docker", "FROM, COPY, RUN, CMD: build an image for a Kestrel service."],
+      ["105", "Better images", "Docker", "Multi-stage builds, the layer cache, .dockerignore."],
+      ["106", "Volumes & data", "Docker", "Data that survives a restart, bind mounts vs volumes."],
+      ["107", "Config & secrets", "Docker", "Environment variables, and why secrets must never be baked into an image."],
+      ["108", "Docker Compose", "Compose", "A web app, a database and a cache, started together."],
+      ["109", "Secure images", "Trivy", "Run as non-root, minimal base images, scan for CVEs, find secrets in old layers."],
+      ["110", "Containerise Kestrel's API", "Docker", "Turn a real service into small, secure images that run with Compose.", true]
+    ] },
+    { n: 2, title: "CI/CD pipelines", goal: "Build, test, scan and ship every change automatically, in GitHub Actions and in Atlassian Bamboo.", labs: [
+      ["201", "Pipeline design", "Actions", "Stages, failing fast, caching."],
+      ["202", "Build & push images", "Actions", "Tag every image with the commit ID and push it to a registry."],
+      ["203", "Tests & quality gates", "Actions", "Unit tests, coverage and linting that block a bad merge."],
+      ["204", "Security gates", "Actions", "Code, dependency, image and secret scanning. Fail the build on high findings."],
+      ["205", "Versions & releases", "Actions", "Semantic versioning and changelogs."],
+      ["206", "Deployment strategies", "Actions", "Rolling, blue-green and canary releases."],
+      ["207", "Environments & rollback", "Actions", "Promote from dev to staging to prod, and roll back fast."],
+      ["208", "Signing & provenance", "cosign", "Sign images and prove where a build came from (SLSA basics)."],
+      ["209", "Bamboo plans & Specs", "Bamboo", "Plans, stages, jobs and tasks. Write Bamboo Specs and translate an Actions workflow into them."],
+      ["210", "Bamboo deployments", "Bamboo", "Deployment projects, environments and releases, agents, variables and secrets, Bitbucket triggers."],
+      ["211", "Commit to production", "Actions", "A full pipeline: build, test, scan, sign and deploy, with a safe rollback.", true]
+    ] },
+    { n: 3, title: "Infrastructure as code", goal: "Describe servers and cloud resources in files you can review, version and scan.", labs: [
+      ["301", "Terraform basics", "Terraform", "init, plan and apply."],
+      ["302", "State, locking & drift", "Terraform", "Remote state, locks, and spotting changes made by hand."],
+      ["303", "Variables, outputs & modules", "Terraform", "Reusable building blocks."],
+      ["304", "Building on AWS", "Terraform", "A VPC, an EC2 server and an S3 bucket."],
+      ["305", "Ansible basics", "Ansible", "Inventory, playbooks and idempotency."],
+      ["306", "Ansible roles & templates", "Ansible", "Configure many servers the same way."],
+      ["307", "Secrets management", "Vault", "Vault and AWS SSM instead of passwords in files."],
+      ["308", "Scanning IaC", "Checkov", "Catch public S3 buckets, 0.0.0.0/0 and missing encryption before they ship."],
+      ["309", "Kestrel's staging environment", "Terraform", "Build the whole environment from code, then prove it's secure.", true]
+    ] },
+    { n: 4, title: "Kubernetes", goal: "Run containers at scale, keep them healthy, and lock the cluster down.", labs: [
+      ["401", "Pods & kubectl", "kubectl", "Create, inspect and debug pods."],
+      ["402", "Deployments", "kubectl", "Scaling, rolling updates and rollback."],
+      ["403", "Services & Ingress", "kubectl", "ClusterIP, NodePort, LoadBalancer, and routing web traffic."],
+      ["404", "ConfigMaps & Secrets", "kubectl", "Configuration outside the image."],
+      ["405", "Health checks & resources", "kubectl", "Liveness and readiness probes, requests and limits."],
+      ["406", "Storage", "kubectl", "Persistent volumes and claims."],
+      ["407", "Helm charts", "Helm", "Package and upgrade an app with one command."],
+      ["408", "NetworkPolicy", "kubectl", "Decide which pods may talk to which."],
+      ["409", "RBAC & pod security", "kubectl", "Least-privilege access, non-root pods, read-only filesystems."],
+      ["410", "GitOps with Argo CD", "Argo CD", "The cluster follows what's in Git."],
+      ["411", "Deploy Kestrel to the cluster", "kubectl", "Ship the whole app to Kubernetes, secured.", true]
+    ] },
+    { n: 5, title: "Observability & reliability", goal: "See what's happening inside your systems, get alerted at the right time, and handle incidents calmly.", labs: [
+      ["501", "Metrics with Prometheus", "Prometheus", "Scrape metrics and query them with PromQL."],
+      ["502", "Dashboards", "Grafana", "Build a dashboard people actually use."],
+      ["503", "Logs at scale", "Loki", "Structured logs, searching across many servers."],
+      ["504", "Tracing", "OpenTelemetry", "Follow one request through many services."],
+      ["505", "Alerts & SLOs", "Alertmanager", "Error budgets, and alerts that don't cry wolf."],
+      ["506", "Incident response", "runbooks", "Runbooks, on-call, and blameless postmortems."],
+      ["507", "Security monitoring", "Falco", "Audit logs, and spotting attacks while they happen."],
+      ["508", "The 3 a.m. outage", "all", "Find and fix an outage with metrics, logs and traces.", true]
+    ] }
+  ];
+  document.getElementById("mods").innerHTML = MODS.map(function (m) {
+    return '<article class="mod"><header><span class="mn">M' + m.n + '</span><h3>' + esc(m.title) + '</h3><span class="cnt">' + m.labs.length + ' labs</span></header>' +
+      '<p class="goal">' + esc(m.goal) + '</p><ul class="labs">' + m.labs.map(function (l) {
+        return '<li' + (l[4] ? ' class="cap"' : '') + '><span class="id">DEV-' + l[0] + '</span><span class="t"><b>' + esc(l[1]) + '</b><span>' + esc(l[3]) +
+          '</span></span><span class="tool">' + esc(l[2]) + '</span></li>';
+      }).join("") + '</ul></article>';
+  }).join("");
+
+  var TOOLS = [
+    ["Containers", [["docker", "build and run containers"], ["docker compose", "multi-container apps"], ["trivy", "image scanning"]]],
+    ["CI/CD", [["GitHub Actions", "workflows"], ["Bamboo", "Atlassian CI/CD with Specs"], ["cosign", "image signing"]]],
+    ["Infrastructure as code", [["terraform", "cloud resources"], ["ansible", "server configuration"], ["vault", "secrets"], ["checkov", "IaC scanning"], ["aws", "the AWS CLI"]]],
+    ["Kubernetes", [["kubectl", "the cluster"], ["helm", "packaged apps"], ["argocd", "GitOps"]]],
+    ["Observability", [["Prometheus", "metrics"], ["Grafana", "dashboards"], ["Loki", "logs"], ["OpenTelemetry", "traces"], ["Falco", "runtime security"]]]
+  ];
+  document.getElementById("tools").innerHTML = TOOLS.map(function (g) {
+    return '<div class="tgrp"><h4>' + esc(g[0]) + '</h4><ul>' + g[1].map(function (t) {
+      return '<li><code>' + esc(t[0]) + '</code> ' + esc(t[1]) + '</li>';
+    }).join("") + '</ul></div>';
+  }).join("");
+})();
+</script>
+</body>
+</html>

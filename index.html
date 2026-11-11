@@ -66,7 +66,7 @@
   .track.soon .num { filter: grayscale(0.5); }
   .track.outline { opacity: 0.85; }
   .track.outline:hover { border-color: var(--c); opacity: 1; }
-  .pill.cyan { color: var(--cyan); border-color: rgba(34,211,238,0.35); background: rgba(34,211,238,0.08); }
+  .pill.outline { color: var(--c); border-color: color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 9%, transparent); }
   .track a.cover { position: absolute; inset: 0; border-radius: 12px; }
   .track a.cover:focus-visible { outline-offset: -2px; }
 
@@ -150,7 +150,7 @@
     var pct = open && t.labs ? Math.round((d / t.labs) * 100) : 0;
     return '<article class="track ' + (open ? "open" : outline ? "outline" : "soon") + '" style="--c:' + t.color + '">' +
       '<div class="head"><span class="num">' + String(i + 1).padStart(2, "0") + '</span><h3>' + t.name + '</h3>' +
-      (open ? '<span class="pill green">open</span>' : outline ? '<span class="pill cyan">outline</span>' : '<span class="pill">coming soon</span>') + '</div>' +
+      (open ? '<span class="pill green">open</span>' : outline ? '<span class="pill outline">outline</span>' : '<span class="pill">coming soon</span>') + '</div>' +
       '<p>' + t.blurb + '</p>' +
       '<div class="tags">' + t.topics.map(function (x) { return "<span>" + x + "</span>"; }).join("") + '</div>' +
       '<div class="foot"><div class="prog"><i style="width:' + pct + '%"></i></div><span class="count">' +
