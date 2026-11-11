@@ -64,6 +64,9 @@
   .track .count { font: 500 12px var(--font-mono); color: var(--muted); white-space: nowrap; }
   .track.soon { opacity: 0.62; }
   .track.soon .num { filter: grayscale(0.5); }
+  .track.outline { opacity: 0.85; }
+  .track.outline:hover { border-color: var(--c); opacity: 1; }
+  .pill.cyan { color: var(--cyan); border-color: rgba(34,211,238,0.35); background: rgba(34,211,238,0.08); }
   .track a.cover { position: absolute; inset: 0; border-radius: 12px; }
   .track a.cover:focus-visible { outline-offset: -2px; }
 
@@ -142,17 +145,18 @@
   if (done > 0) document.getElementById("continueBtn").textContent = "Continue Python →";
 
   var html = SL.TRACKS.map(function (t, i) {
-    var open = t.status === "open";
+    var open = t.status === "open", outline = t.status === "outline";
     var d = SL.trackDone(t.id);
     var pct = open && t.labs ? Math.round((d / t.labs) * 100) : 0;
-    return '<article class="track ' + (open ? "open" : "soon") + '" style="--c:' + t.color + '">' +
+    return '<article class="track ' + (open ? "open" : outline ? "outline" : "soon") + '" style="--c:' + t.color + '">' +
       '<div class="head"><span class="num">' + String(i + 1).padStart(2, "0") + '</span><h3>' + t.name + '</h3>' +
-      (open ? '<span class="pill green">open</span>' : '<span class="pill">coming soon</span>') + '</div>' +
+      (open ? '<span class="pill green">open</span>' : outline ? '<span class="pill cyan">outline</span>' : '<span class="pill">coming soon</span>') + '</div>' +
       '<p>' + t.blurb + '</p>' +
       '<div class="tags">' + t.topics.map(function (x) { return "<span>" + x + "</span>"; }).join("") + '</div>' +
       '<div class="foot"><div class="prog"><i style="width:' + pct + '%"></i></div><span class="count">' +
-      (open ? d + " / " + t.labs + " labs" : "planned") + '</span></div>' +
-      (open ? '<a class="cover" href="' + t.path + '" aria-label="Open the ' + t.name + ' track"></a>' : "") +
+      (open ? d + " / " + t.labs + " labs" : outline ? t.labs + " labs planned · see the outline →" : "planned") + '</span></div>' +
+      (open ? '<a class="cover" href="' + t.path + '" aria-label="Open the ' + t.name + ' track"></a>' :
+        outline ? '<a class="cover" href="' + t.path + '" aria-label="See the ' + t.name + ' track outline"></a>' : "") +
       '</article>';
   }).join("");
   document.getElementById("tracks").innerHTML = html;
