@@ -23,7 +23,7 @@
     return SL.handle(wrap(msg));
   }
   // Tab completion: git subcommands, then branch and tag names for commands that take them.
-  var COMMON = ["add", "bisect", "blame", "branch", "checkout", "cherry-pick", "clean", "commit", "config", "describe", "diff", "grep", "help", "init", "log", "merge", "mv", "reflog", "reset", "restore", "revert", "rm", "shortlog", "show", "stash", "status", "switch", "tag"];
+  var COMMON = ["add", "bisect", "blame", "branch", "checkout", "cherry-pick", "clean", "clone", "commit", "fetch", "pull", "push", "rebase", "remote", "config", "describe", "diff", "grep", "help", "init", "log", "merge", "mv", "reflog", "reset", "restore", "revert", "rm", "shortlog", "show", "stash", "status", "switch", "tag"];
   function common(list, word) {
     var c = list.filter(function (x) { return x.indexOf(word) === 0; });
     if (!c.length) return null;

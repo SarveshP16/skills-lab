@@ -239,6 +239,22 @@
       if (keys(st3.conflicts).length) L.push("  (fix conflicts and run \"git cherry-pick --continue\")"); else L.push("  (all conflicts fixed: run \"git cherry-pick --continue\")");
       L.push("  (use \"git cherry-pick --skip\" to skip this patch)", "  (use \"git cherry-pick --abort\" to cancel the cherry-pick operation)");
     }
+    var rb = rebaseDir(repo);
+    if (rb) {
+      var done = (G.gread(repo, rb + "/done") || "").split("\n").filter(function (l) { return l.trim() && !/^#/.test(l); });
+      var todo = (G.gread(repo, rb + "/git-rebase-todo") || "").split("\n").filter(function (l) { return l.trim() && !/^#/.test(l); });
+      if (done.length) L.push("Last command" + (done.length > 1 ? "s" : "") + " done (" + plural(done.length, "command", "commands") + " done):", done.slice(-2).map(function (l) { return "   " + l; }).join("\n"));
+      if (todo.length) L.push("Next command" + (todo.length > 1 ? "s" : "") + " to do (" + plural(todo.length, "remaining command", "remaining commands") + "):", todo.slice(0, 2).map(function (l) { return "   " + l; }).join("\n"), "  (use \"git rebase --edit-todo\" to view and edit)");
+      else L.push("No commands remaining.");
+      var bname = (G.gread(repo, rb + "/head-name") || "").trim().replace(/^refs\/heads\//, ""), onto = short((G.gread(repo, rb + "/onto") || "").trim());
+      var stR = G.readIndex(repo);
+      if (G.gexists(repo, rb + "/amend") && !keys(stR.conflicts).length) L.push("You are currently editing a commit while rebasing branch '" + bname + "' on '" + onto + "'.", "  (use \"git commit --amend\" to amend the current commit)", "  (use \"git rebase --continue\" once you are satisfied with your changes)");
+      else {
+        L.push("You are currently rebasing branch '" + bname + "' on '" + onto + "'.");
+        if (keys(stR.conflicts).length) L.push("  (fix conflicts and then run \"git rebase --continue\")"); else L.push("  (all conflicts fixed: run \"git rebase --continue\")");
+        L.push("  (use \"git rebase --skip\" to skip this patch)", "  (use \"git rebase --abort\" to check out the original branch)");
+      }
+    }
     if (G.gexists(repo, "BISECT_START")) L.push("You are currently bisecting, started from branch '" + G.gread(repo, "BISECT_START").trim() + "'.", "  (use \"git bisect reset\" to get back to the original branch)");
     return L;
   }
@@ -259,7 +275,10 @@
     var A = a ? G.ancestors(c.sys, a) : {}, B = b ? G.ancestors(c.sys, b) : {};
     return { ahead: keys(A).filter(function (x) { return !B[x]; }).length, behind: keys(B).filter(function (x) { return !A[x]; }).length };
   }
+  function rebaseDir(repo) { return G.gexists(repo, "rebase-merge/head-name") ? "rebase-merge" : null; }
   function headLine(c, h) {
+    var rb = rebaseDir(c.repo);
+    if (rb && h.detached) return (G.gexists(c.repo, rb + "/interactive") ? "interactive rebase" : "rebase") + " in progress; onto " + short(G.gread(c.repo, rb + "/onto").trim());
     if (!h.detached) return "On branch " + h.branch;
     if (G.gexists(c.repo, "BISECT_START")) return "HEAD detached at " + short(h.sha);
     // "detached at" if HEAD still points where it was detached, otherwise "detached from"
@@ -2841,7 +2860,14 @@
   }
 
   S.CMDS.git = gitMain;
-  var api = { CMDS: CMDS, computeStatus: computeStatus, walk: walk, changes: changes, decorations: decorations, mkOut: mkOut, Exit: Exit, cmdLog: cmdLog, USAGE: USAGE, VERSION: VERSION, matcher: matcher, toRel: toRel, ignorer: ignorer, blameLines: blameLines };
+  // Internals for the files that add commands (remotes, rebase, GitHub, Actions, security).
+  var X = { parseOpts: parseOpts, die: die, Exit: Exit, cfg: cfg, rev: rev, tryRev: tryRev, commitRev: commitRev, short: short, ident: ident, softIdent: softIdent,
+    storeObjects: storeObjects, headFlat: headFlat, umask: umask, computeStatus: computeStatus, moveTree: moveTree, overwriteError: overwriteError, doSwitch: doSwitch,
+    setUpstream: setUpstream, guessRemote: guessRemote, applyMerge: applyMerge, mergeMessages: mergeMessages, cmdMerge: cmdMerge, cmdCommit: cmdCommit, cmdSwitch: cmdSwitch,
+    cmdCheckout: cmdCheckout, cmdReset: cmdReset, cmdBranch: cmdBranch, pickLike: pickLike, commitSummary: commitSummary, cleanupMessage: cleanupMessage, runHook: runHook,
+    changes: changes, stats: stats, summaryLine: summaryLine, printChanges: printChanges, subject: subject, body: body, keys: keys, plural: plural, pad: pad, lpad: lpad,
+    needWork: needWork, needRepo: needRepo, walk: walk, aheadBehind: aheadBehind, decorations: decorations, safeDir: safeDir, similar: similar, LATER: LATER };
+  var api = { X: X, CMDS: CMDS, computeStatus: computeStatus, walk: walk, changes: changes, decorations: decorations, mkOut: mkOut, Exit: Exit, cmdLog: cmdLog, USAGE: USAGE, VERSION: VERSION, matcher: matcher, toRel: toRel, ignorer: ignorer, blameLines: blameLines };
   root.GitCmds = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

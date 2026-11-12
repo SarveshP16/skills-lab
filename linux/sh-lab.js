@@ -283,7 +283,7 @@
     start: function (hooks) { this.ready = true; hooks.setStatus("ok", "kc-web-01 · Ubuntu 24.04 (simulated)"); hooks.enableRun(); },
     call: function (msg) { return new Promise(function (res) { setTimeout(function () { res(handle(msg)); }, 0); }); }
   };
-  var api = { handle: handle, runner: runner, H: H, replay: replay, makeCtx: makeCtx, commandsOf: commandsOf, complete: complete, readForEdit: readForEdit, parseEdit: parseEdit, solutionHistory: solutionHistory, b64encode: b64encode, prompt: function () { return "dev@kc-web-01:~$"; } };
+  var api = { EXPLAIN: EXPLAIN, handle: handle, runner: runner, H: H, replay: replay, makeCtx: makeCtx, commandsOf: commandsOf, complete: complete, readForEdit: readForEdit, parseEdit: parseEdit, solutionHistory: solutionHistory, b64encode: b64encode, prompt: function () { return "dev@kc-web-01:~$"; } };
   root.ShLab = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
