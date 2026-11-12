@@ -301,7 +301,7 @@
   };
   B.read = function (args, io, sess) {
     var o = opts("read", args, { flags: "rs", vals: "pnta" });
-    if (o.o.p) out(io, o.o.p);
+    if (o.o.p && (io.stdin === null || io.stdin === undefined)) io.err(o.o.p);   // the prompt shows only when reading from a terminal
     if (io.stdin === null || io.stdin === undefined) {
       if (io.tty) { note(io, "(read waits for you to type a line. In this lab's terminal, give it input with a pipe or <<<, e.g.: read name <<< \"Ana\")"); return 1; }
       return 1;

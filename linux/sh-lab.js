@@ -22,7 +22,8 @@
       var shell = S.activeShell(sess);
       var e = { cmd: line, prompt: S.prompt(shell), cwdBefore: shell.cwd, userBefore: shell.user };
       var res;
-      if (/^@edit!? /.test(line)) { res = editLine(sess, shell, line, e); }
+      if (sess.sys.lockedOut) { e.locked = true; res = { code: 255, lines: [{ text: "ssh: connect to host kc-web-01 port 22: Connection timed out", cls: "err" }, { text: "(You're locked out: the firewall now blocks SSH. Click Reset machine to start the lab's server again.)", cls: "sys" }] }; }
+      else if (/^@edit!? /.test(line)) { res = editLine(sess, shell, line, e); }
       else try { res = S.runLine(sess, line); }
       catch (err) { res = { code: 1, lines: [{ text: "Internal error in the Linux simulator: " + (err && err.message || err), cls: "err" }] }; }
       var after = S.activeShell(sess);
@@ -79,6 +80,26 @@
     }
     if (r.error === "ENOENT" && r.last && r.parent) return { ok: true, path: path, abs: abs, content: "", exists: false, writable: S.can(shell, r.parent, "w") };
     return { error: path + ": " + (S.ERRTEXT[r.error] || "can't open") };
+  }
+
+  // Reference solutions write files as "nano PATH" followed by the file's lines indented by 4 spaces. This turns
+  // that readable form into the history the editor panel would produce ("@edit PATH BASE64").
+  function b64encode(t) {
+    if (typeof Buffer !== "undefined" && typeof window === "undefined") return Buffer.from(t, "utf8").toString("base64");
+    var bytes = new TextEncoder().encode(t), bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function solutionHistory(text) {
+    var src = String(text || "").replace(/\r/g, "").split("\n"), outL = [];
+    for (var i = 0; i < src.length; i++) {
+      var m = /^\s*(sudo\s+)?nano\s+(\S+)\s*$/.exec(src[i]);
+      if (!m || !(i + 1 < src.length && /^ {4}/.test(src[i + 1]))) { outL.push(src[i]); continue; }
+      var body = [];
+      while (i + 1 < src.length && (/^ {4}/.test(src[i + 1]) || (src[i + 1].trim() === "" && i + 2 < src.length && /^ {4}/.test(src[i + 2])))) { i++; body.push(src[i].slice(4)); }
+      outL.push("@edit" + (m[1] ? "!" : "") + " " + encodeURIComponent(m[2]) + " " + b64encode(body.join("\n") + "\n"));
+    }
+    return outL.join("\n");
   }
 
   /* ---------------- check context */
@@ -262,7 +283,7 @@
     start: function (hooks) { this.ready = true; hooks.setStatus("ok", "kc-web-01 · Ubuntu 24.04 (simulated)"); hooks.enableRun(); },
     call: function (msg) { return new Promise(function (res) { setTimeout(function () { res(handle(msg)); }, 0); }); }
   };
-  var api = { handle: handle, runner: runner, H: H, replay: replay, makeCtx: makeCtx, commandsOf: commandsOf, complete: complete, readForEdit: readForEdit, parseEdit: parseEdit, prompt: function () { return "dev@kc-web-01:~$"; } };
+  var api = { handle: handle, runner: runner, H: H, replay: replay, makeCtx: makeCtx, commandsOf: commandsOf, complete: complete, readForEdit: readForEdit, parseEdit: parseEdit, solutionHistory: solutionHistory, b64encode: b64encode, prompt: function () { return "dev@kc-web-01:~$"; } };
   root.ShLab = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

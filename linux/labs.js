@@ -621,9 +621,9 @@
       "<h3>PATH: where commands come from</h3>" + ex("echo $PATH\nwhich ls") +
       "<p>When you type <code>ls</code>, bash looks in each folder of <code>$PATH</code> in order. To run your own scripts by name, put them in a folder on the PATH: <code>export PATH=\"$HOME/bin:$PATH\"</code>. Folders not on the PATH need the path: <code>./myscript</code>.</p>" +
       "<h3>Aliases and ~/.bashrc</h3><p><code>alias ll='ls -alF'</code> makes a shortcut, but only in the current shell. To keep it, add the line to <code>~/.bashrc</code>, which bash reads at every login, then reload it with <code>source ~/.bashrc</code>.</p>" +
-      "<h3>Editors: survival kit</h3><p>On a server you'll edit files in the terminal. This lab's terminal can't show full-screen editors, so here are the keys you'll need on a real one:</p>" +
+      "<h3>Editors: survival kit</h3><p>On a server you'll edit files in the terminal. Here, <code>nano FILE</code> opens a simple editor panel instead of the full-screen editor (Module 3 uses it for scripts), so these are the keys you'll need on a real server:</p>" +
       '<table class="t"><tr><th>nano (friendly)</th><th>vim (everywhere)</th></tr><tr><td><code>nano file</code>, just type<br>Ctrl+O, Enter: save<br>Ctrl+X: exit<br>Ctrl+W: search</td><td><code>vim file</code>, then <b>i</b> to type<br><b>Esc</b> to stop typing<br><b>:wq</b> save and quit<br><b>:q!</b> quit without saving</td></tr></table>' +
-      "<p>Here, add lines to files with <code>echo '...' &gt;&gt; file</code>.</p>",
+      "<p>For one line, <code>echo '...' &gt;&gt; file</code> is often quicker than opening an editor.</p>",
     files: { "bin/kc-status": { content: KC_STATUS, mode: 509 } },
     starter: "",
     objectives: [

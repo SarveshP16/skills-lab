@@ -10,7 +10,7 @@ Hands-on labs for learning Python, PowerShell, Linux, Git & GitHub, Networking, 
 |---|-------|--------|
 | 1 | Python | Complete: 4 modules, 32 labs, 4 capstone projects and 99 practice drills |
 | 2 | PowerShell | Complete: 32 labs, 4 capstone projects and 108 practice drills, on a simulated PowerShell 7 (with simulated Windows GUI windows, scripts run like programs, Pester and PSScriptAnalyzer) |
-| 3 | Linux | Modules 1-2 open: 17 labs, 2 capstone projects and 57 practice drills (36 labs planned), typed into a simulated Bash terminal on an Ubuntu 24.04 server with real services, packages, disks, a network and SSH to other servers |
+| 3 | Linux | complete: 32 labs, 4 capstone projects and 108 practice drills, typed into a simulated Bash terminal on an Ubuntu 24.04 server with real services, packages, disks, a network and SSH to other servers; Module 3 writes scripts in an editor panel (getopts, trap, ShellCheck), Module 4 investigates a break-in and hardens the server (accounts, SUID, ufw, SSH, fail2ban, GPG, package integrity, CI) |
 | 4 | Git & GitHub | Module 1 open: 9 labs, a capstone project and 30 practice drills (36 labs planned), typed into a simulated Git 2.43 (real commit IDs, merges, conflicts, stash, bisect) with an editor panel for resolving conflicts |
 | 5 | Networking | outline published (networking/): 5 modules, 48 labs planned (OSI layers, ports, packet capture, attacks & detection, defence, cloud networks); labs not built yet |
 | 6 | DevOps | outline published (devops/): 5 modules, 49 labs planned (Docker, CI/CD in GitHub Actions and Bamboo, Terraform & Ansible, Kubernetes, observability); labs not built yet |

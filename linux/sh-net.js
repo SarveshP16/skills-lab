@@ -913,7 +913,7 @@
       if (o.resolve && o.resolve.host === cur.host && o.resolve.port === cur.port) req.resolveTo = o.resolve.ip;
       verbose("*   Trying " + (req.resolveTo || resolve(sys, cur.host) || cur.host) + ":" + cur.port + "...");
       res = httpRequest(sys, req);
-      if (res.err) { verbose("* connect to " + (res.ip || cur.host) + " port " + cur.port + " failed: Connection refused"); if (showErr) errl(io, "curl: (" + res.err.code + ") " + res.err.msg); return res.err.code; }
+      if (res.err) { verbose("* connect to " + (res.ip || cur.host) + " port " + cur.port + " failed: Connection refused"); if (showErr) errl(io, "curl: (" + res.err.code + ") " + res.err.msg); if (wfmt) out(io, wfmt.replace(/%\{(\w+)\}/g, function (m0, k) { return { http_code: "000", response_code: "0", size_download: "0", time_total: "0.000512", remote_ip: "", content_type: "", url_effective: url, num_redirects: "0" }[k] || ""; }).replace(/\\n/g, "\n")); return res.err.code; }
       verbose("* Connected to " + cur.host + " (" + res.ip + ") port " + cur.port);
       verbose("> " + method + " " + cur.path + " HTTP/1.1\n> Host: " + req.headers.host + "\n> User-Agent: " + req.headers["user-agent"] + "\n> Accept: */*\n> ");
       verbose("< HTTP/1.1 " + res.status + " " + (REASON[res.status] || "") + "\n" + Object.keys(res.headers).map(function (h) { return "< " + h + ": " + res.headers[h]; }).join("\n") + "\n< ");

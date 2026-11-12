@@ -120,12 +120,13 @@
     sess.user = u.name; sess.uid = u.uid; sess.gid = u.gid; sess.home = u.home;
     sess.groups = supplementary(sess.sys, u.name);
     sess.vars.USER = { v: u.name, x: true }; sess.vars.LOGNAME = { v: u.name, x: true }; sess.vars.HOME = { v: u.home, x: true };
+    sess.vars.UID = { v: String(u.uid), x: false }; sess.vars.EUID = { v: String(u.uid), x: false };
   }
   function newSession(sys, opts) {
     opts = opts || {};
     var s = {
       sys: sys, vars: {}, aliases: {}, functions: {}, cwd: "/", umask: 2, lastExit: 0, positional: [], argv0: "bash",
-      term: [], histLines: [], steps: 0, maxSteps: opts.maxSteps || 400000, opts: { errexit: false, nounset: false, pipefail: false, xtrace: false },
+      term: [], histLines: [], steps: 0, maxSteps: opts.maxSteps || 400000, opts: { errexit: false, nounset: false, pipefail: false, xtrace: false, errtrace: false },
       userStack: [], depth: 0, pid: 2400 + (sys.pidSeq++ || 0)
     };
     var base = { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", SHELL: "/bin/bash", HOSTNAME: sys.host, LANG: "en_US.UTF-8", TERM: "xterm-256color", EDITOR: "nano" };
@@ -147,6 +148,7 @@
     sess.vars[name] = { v: String(val), x: exp || (cur ? cur.x : false) };
   }
   function lookupVar(sess, name) {
+    if (name === "LINENO" && !(sess.vars.LINENO)) return String(sess.lineno || 0);
     if (sess.locals) for (var i = sess.locals.length - 1; i >= 0; i--) if (Object.prototype.hasOwnProperty.call(sess.locals[i], name)) return sess.locals[i][name].v;
     return getVar(sess, name);
   }
@@ -159,6 +161,7 @@
     Object.keys(env).forEach(function (k) { c.vars[k] = { v: env[k], x: true }; });
     c.vars.IFS = { v: " \t\n", x: false };
     c.cwd = sess.cwd; c.umask = sess.umask; c.uid = sess.uid; c.gid = sess.gid; c.groups = sess.groups; c.user = sess.user; c.home = sess.home;
+    c.vars.UID = { v: String(c.uid), x: false }; c.vars.EUID = { v: String(c.uid), x: false };
     c.depth = sess.depth + 1;
     c.parent = sess;
     return c;
@@ -172,6 +175,7 @@
     c.locals = sess.locals ? sess.locals.slice() : null;
     c.positional = sess.positional.slice();
     c.isSub = true;
+    if (!sess.opts.errtrace) c.traps = null;
     c.root = sess.root || sess;
     return c;
   }
@@ -179,12 +183,22 @@
 
   /* ================================================================== Parser */
   var RESERVED = { "if": 1, "then": 1, "elif": 1, "else": 1, "fi": 1, "for": 1, "in": 1, "do": 1, "done": 1, "while": 1, "until": 1, "case": 1, "esac": 1, "function": 1, "{": 1, "}": 1, "!": 1 };
-  function ParseError(msg) { this.message = msg; }
+  function ParseError(msg, line) { this.message = msg; this.line = line; }
   function Parser(src) { this.s = src; this.i = 0; this.pendingHeredocs = []; }
   var P = Parser.prototype;
   P.c = function (k) { return this.s.charAt(this.i + (k || 0)); };
+  // Line number of a position (1-based), counted incrementally.
+  P.lineAt = function (pos) {
+    if (this._lp === undefined || pos < this._lp) { this._lp = 0; this._ln = 1; }
+    for (var k = this._lp; k < pos && k < this.s.length; k++) if (this.s.charCodeAt(k) === 10) this._ln++;
+    this._lp = Math.max(this._lp, Math.min(pos, this.s.length));
+    return this._ln;
+  };
   P.eof = function () { return this.i >= this.s.length; };
-  P.err = function (tok) { throw new ParseError("bash: syntax error near unexpected token `" + (tok || "newline") + "'"); };
+  P.err = function (tok) {
+    if (tok && /^[^\s;&|()<>]$/.test(tok) && this.s.charAt(this.i) === tok) { var wm = /^[^\s;&|()<>]+/.exec(this.s.slice(this.i)); if (wm) tok = wm[0]; }
+    throw new ParseError("bash: syntax error near unexpected token `" + (tok || "newline") + "'");
+  };
   P.ws = function () {
     for (;;) {
       var c = this.c();
@@ -352,17 +366,17 @@
   };
   P.command = function () {
     this.ws();
-    var node;
+    var node, cline = this.lineAt(this.i);
     if (this.c() === "(") {
       if (this.c(1) === "(") { var a = this.dollarArith(); node = { t: "arithcmd", expr: a }; }
       else { this.i++; var body = this.list(null); this.newlines(); if (this.c() !== ")") this.err(this.c() || "newline"); this.i++; node = { t: "subshell", body: body }; }
     } else if (this.keyword("{")) { this.i++; var b = this.list(["}"]); this.expectKw("}"); node = { t: "group", body: b }; }
-    else if (this.keyword("if")) node = this.ifCmd();
+    else if (this.keyword("if")) { node = this.ifCmd(); node.line = cline; }
     else if (this.keyword("for")) node = this.forCmd();
     else if (this.keyword("while") || this.keyword("until")) node = this.whileCmd();
     else if (this.keyword("case")) node = this.caseCmd();
     else if (this.keyword("function")) { this.i += 8; this.ws(); var fn = this.word(); this.ws(); if (this.c() === "(" && this.c(1) === ")") this.i += 2; this.newlines(); node = { t: "func", name: fn, body: this.command() }; return node; }
-    else if (this.s.slice(this.i, this.i + 2) === "[[") node = this.dbracket();
+    else if (this.s.slice(this.i, this.i + 2) === "[[") { node = this.dbracket(); node.line = cline; }
     else {
       node = this.simple();
       if (node.words.length === 1 && !node.assigns.length && /^[A-Za-z_][\w.-]*$/.test(node.words[0])) {
@@ -392,6 +406,8 @@
   };
   P.simple = function () {
     var assigns = [], words = [], redirs = [];
+    this.ws();
+    var line = this.lineAt(this.i);
     for (;;) {
       this.ws();
       if (this.eof()) break;
@@ -405,7 +421,7 @@
       words.push(w);
     }
     if (!assigns.length && !words.length && !redirs.length) this.err(this.peekOp() || this.c() || "newline");
-    return { t: "simple", assigns: assigns, words: words, redirs: redirs };
+    return { t: "simple", assigns: assigns, words: words, redirs: redirs, line: line };
   };
   P.ifCmd = function () {
     this.i += 2;
@@ -483,9 +499,17 @@
   };
   function parse(src) {
     var p = new Parser(src);
-    var prog = p.program();
-    if (p.pendingHeredocs.length) p.readHeredocs();
-    return prog;
+    try {
+      var prog = p.program();
+      if (p.pendingHeredocs.length) p.readHeredocs();
+      return prog;
+    } catch (e) {
+      if (e instanceof ParseError && e.line == null) {
+        e.line = p.lineAt(Math.min(p.i, p.s.length));
+        if (p.i >= p.s.replace(/\s+$/, "").length && /near unexpected token `(newline|)'/.test(e.message)) e.message = "bash: syntax error: unexpected end of file";
+      }
+      throw e;
+    }
   }
 
   /* ================================================================== Expansion */
@@ -624,7 +648,7 @@
     var m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(raw.slice(i + 1));
     if (!m) return { text: "$", end: i + 1 };
     var v = lookupVar(sess, m[0]);
-    if (v === undefined && sess.opts.nounset) throw new ShError("bash: " + m[0] + ": unbound variable", 1);
+    if (v === undefined && sess.opts.nounset) throw fatal("bash: " + m[0] + ": unbound variable");
     return { text: v === undefined ? "" : v, end: i + 1 + m[0].length };
   }
   function special(sess, c) {
@@ -634,17 +658,25 @@
     if (c === "@" || c === "*") return sess.positional.join(" ");
     if (c === "0") return sess.argv0;
     if (c === "!") return String(sess.lastBg || "");
-    if (c === "-") return "himBH";
+    if (c === "-") return (sess.opts.errexit ? "e" : "") + (sess.scriptName ? "" : "im") + (sess.opts.nounset ? "u" : "") + (sess.opts.xtrace ? "x" : "") + (sess.scriptName ? "hB" : "hBH");
     var v = sess.positional[+c - 1];
-    if (v === undefined && sess.opts.nounset) throw new ShError("bash: $" + c + ": unbound variable", 1);
+    if (v === undefined && sess.opts.nounset) throw fatal("bash: $" + c + ": unbound variable");
     return v === undefined ? "" : v;
+  }
+  function fatal(msg) { var e = new ShError(msg, 1); e.fatal = true; return e; }
+  // Errors from the shell itself: inside a script bash names the script and the line ("./x.sh: line 3: ...").
+  function shMsg(sess, msg) { return sess.scriptName && /^bash: /.test(msg) ? sess.scriptName + ": line " + (sess.lineno || 1) + ": " + msg.slice(6) : msg; }
+  function shErr(sess, io, e) {
+    io.err(shMsg(sess, e.message) + "\n");
+    if (e.fatal && sess.scriptName && !sess.inTrap) throw new ExitSignal(e.code);
+    return e.code;
   }
   function paramExpand(sess, body) {
     if (body.charAt(0) === "#" && body.length > 1) { var v0 = paramValue(sess, body.slice(1)); return String((v0 || "").length); }
     var m = /^([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!])(.*)$/.exec(body);
     if (!m) throw new ShError("bash: ${" + body + "}: bad substitution", 1);
     var name = m[1], rest = m[2], val = paramValue(sess, name);
-    if (rest === "") { if (val === undefined && sess.opts.nounset) throw new ShError("bash: " + name + ": unbound variable", 1); return val === undefined ? "" : val; }
+    if (rest === "") { if (val === undefined && sess.opts.nounset) throw fatal("bash: " + name + ": unbound variable"); return val === undefined ? "" : val; }
     var w = function (s) { return expandString(sess, s); };
     var mm;
     if ((mm = /^(:?)([-=+?])([\s\S]*)$/.exec(rest))) {
@@ -652,7 +684,7 @@
       if (mm[2] === "-") return unset ? w(mm[3]) : val;
       if (mm[2] === "=") { if (unset) { setVar(sess, name, w(mm[3])); return w(mm[3]); } return val; }
       if (mm[2] === "+") return unset ? "" : w(mm[3]);
-      if (mm[2] === "?") { if (unset) throw new ShError("bash: " + name + ": " + (mm[3] ? w(mm[3]) : "parameter null or not set"), 1); return val; }
+      if (mm[2] === "?") { if (unset) throw fatal("bash: " + name + ": " + (mm[3] ? w(mm[3]) : "parameter null or not set")); return val; }
     }
     val = val || "";
     if ((mm = /^(##?|%%?)([\s\S]*)$/.exec(rest))) {
@@ -684,6 +716,7 @@
     try { code = runSource(sub, src, io); }
     catch (e) { if (e instanceof ExitSignal) code = e.code; else throw e; }
     sess.lastExit = code;
+    sess.substExit = code;
     return buf.join("").replace(/\n+$/, "");
   }
   // Expand a word to fields (split + glob unless quoted).
@@ -879,9 +912,29 @@
       }
       code = execNode(sess, it.node, io, false);
       sess.lastExit = code;
-      if (code !== 0 && sess.opts.errexit && !sess.noErrexit && isPlainFailure(it.node)) throw new ExitSignal(code);
+      if (code !== 0 && !sess.noErrexit && isPlainFailure(it.node)) {
+        if (sess.traps && sess.traps.ERR && !sess.inTrap && (!sess.locals || !sess.locals.length || sess.opts.errtrace)) runTrap(sess, "ERR", io);
+        if (sess.opts.errexit) throw new ExitSignal(code);
+      }
     }
     return code;
+  }
+  // Run a trap's commands in the shell that set it; $? inside is the status that triggered it.
+  function runTrap(sess, sig, io) {
+    var src = sess.traps && sess.traps[sig];
+    if (!src) return null;
+    var saved = sess.lastExit, prev = sess.inTrap;
+    sess.inTrap = true;
+    try { runSource(sess, src, io); }
+    catch (e) {
+      if (e instanceof ExitSignal) { sess.inTrap = prev; throw e; }
+      if (e instanceof ParseError) io.err(shMsg(sess, e.message) + "\n");
+      else if (e instanceof ShError) io.err(shMsg(sess, e.message) + "\n");
+      else if (!(e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal)) { sess.inTrap = prev; throw e; }
+    }
+    sess.inTrap = prev;
+    sess.lastExit = saved;
+    return saved;
   }
   function isPlainFailure(node) { return node.t !== "andor" && !(node.t === "pipe" && node.neg); }
   function execNode(sess, node, io, inCond) {
@@ -907,7 +960,9 @@
       }
       case "pipe": return execPipe(sess, node, io);
       case "simple": return execSimple(sess, node, io);
-      default: return withRedirs(sess, node.redirs || [], io, function (io2) { return execCompound(sess, node, io2); });
+      default:
+        if (node.line && !sess.inTrap && (node.t === "dbracket" || node.t === "arithcmd")) sess.lineno = node.line;
+        return withRedirs(sess, node.redirs || [], io, function (io2) { return execCompound(sess, node, io2); });
     }
   }
   function execCompound(sess, node, io) {
@@ -1046,7 +1101,7 @@
     if (!redirs.length) return fn(io);
     var io2;
     try { io2 = openRedirs(sess, redirs, io); }
-    catch (e) { if (e instanceof ShError) { io.err(e.message + "\n"); return e.code; } throw e; }
+    catch (e) { if (e instanceof ShError) return shErr(sess, io, e); throw e; }
     return fn(io2);
   }
 
@@ -1063,21 +1118,23 @@
         return withRedirs(sess, node.redirs, io, function (io2) { return execList(sess, ast, io2); });
       } finally { sess.noAlias = false; }
     }
+    if (node.line && !sess.inTrap) sess.lineno = node.line;
     var args = [];
     var xe;
     try { words.forEach(function (w) { expandWord(sess, w).forEach(function (x) { args.push(x); }); }); }
-    catch (e) { if (e instanceof ShError) { io.err(e.message + "\n"); return e.code; } throw e; }
+    catch (e) { if (e instanceof ShError) return shErr(sess, io, e); throw e; }
     var assigns = [];
+    sess.substExit = undefined;
     try {
       node.assigns.forEach(function (a) {
         var m = /^([A-Za-z_][A-Za-z0-9_]*)(\+?)=([\s\S]*)$/.exec(a);
         assigns.push({ name: m[1], append: m[2] === "+", value: expandString(sess, m[3]) });
       });
-    } catch (e) { if (e instanceof ShError) { io.err(e.message + "\n"); return e.code; } throw e; }
+    } catch (e) { if (e instanceof ShError) return shErr(sess, io, e); throw e; }
     if (!args.length) {
       assigns.forEach(function (a) { setVar(sess, a.name, a.append ? (lookupVar(sess, a.name) || "") + a.value : a.value); });
       if (node.redirs.length) return withRedirs(sess, node.redirs, io, function () { return 0; });
-      return sess.lastExitFromSubst !== undefined ? 0 : 0;
+      return sess.substExit !== undefined ? sess.substExit : 0;   // x=$(cmd) has cmd's exit status
     }
     if (sess.opts.xtrace) io.err("+ " + args.join(" ") + "\n");
     return withRedirs(sess, node.redirs, io, function (io2) {
@@ -1096,11 +1153,12 @@
     if (sess.functions[name]) return callFunction(sess, name, args.slice(1), io);
     if (BUILTINS[name]) {
       try { return BUILTINS[name](args, io, sess); }
-      catch (e) { if (e instanceof ShError) { io.err(e.message + "\n"); return e.code; } throw e; }
+      catch (e) { if (e instanceof ShError) return shErr(sess, io, e); throw e; }
     }
     var found = resolveCommand(sess, name);
     if (found.error) {
-      io.err(found.error + "\n");
+      if (sess.scriptName) io.err(sess.scriptName + ": line " + (sess.lineno || 1) + ": " + (found.code === 127 && name.indexOf("/") < 0 ? name + ": command not found" : found.error.replace(/^bash: /, "")) + "\n");
+      else io.err(found.error + "\n");
       return found.code;
     }
     return execFound(sess, found, args, io);
@@ -1111,7 +1169,7 @@
     if (!impl) { io.err("bash: " + found.path + ": cannot execute binary file: Exec format error\n"); return 126; }
     try { return impl(args, io, sess) || 0; }
     catch (e) {
-      if (e instanceof ShError) { io.err(e.message + "\n"); return e.code; }
+      if (e instanceof ShError) return shErr(sess, io, e);
       throw e;
     }
   }
@@ -1148,16 +1206,34 @@
     }
     var c = childSession(sess);
     c.argv0 = argv0 || path;
+    c.scriptName = argv0 || path;
     c.positional = args.slice();
     c.isScript = true;
+    if (sess.scriptOpts) { Object.keys(sess.scriptOpts).forEach(function (k) { c.opts[k] = sess.scriptOpts[k]; }); sess.scriptOpts = null; }
+    return runScriptBody(c, rf.content, io, sess);
+  }
+  // Run script text in a prepared child shell: errors print with the script's name and line; the EXIT trap runs last.
+  function runScriptBody(c, text, io, parent) {
     var code;
-    try { code = runSource(c, rf.content, io); }
+    try { code = runSource(c, text, io); }
     catch (e) {
       if (e instanceof ExitSignal) code = e.code;
-      else if (e instanceof ParseError) { io.err(path + ": line " + 1 + ": " + e.message.replace(/^bash: /, "") + "\n"); code = 2; }
+      else if (e instanceof ParseError) {
+        io.err(c.scriptName + ": line " + (e.line || 1) + ": " + e.message.replace(/^bash: /, "") + "\n");
+        var bad = String(text).split("\n")[(e.line || 1) - 1];
+        if (/near unexpected token/.test(e.message) && bad !== undefined) io.err(c.scriptName + ": line " + (e.line || 1) + ": `" + bad.trim() + "'\n");
+        code = 2;
+      }
+      else if (e instanceof ShError) { io.err(shMsg(c, e.message) + "\n"); code = e.code; }
+      else if (e instanceof ReturnSignal) code = e.code;
       else throw e;
     }
-    sess.steps = c.steps;
+    if (c.traps && c.traps.EXIT && !c.exitTrapDone) {
+      c.exitTrapDone = true;
+      c.lastExit = code;
+      try { runTrap(c, "EXIT", io); } catch (e2) { if (e2 instanceof ExitSignal) code = e2.code; else throw e2; }
+    }
+    if (parent) parent.steps = c.steps;
     return code;
   }
   function callFunction(sess, name, args, io) {
@@ -1190,6 +1266,10 @@
         if (op === "==" || op === "=") return globMatch(str(rawB), A);
         if (op === "!=") return !globMatch(str(rawB), A);
         if (op === "=~") { var m = new RegExp(str(rawB)).exec(A); if (m) setVar(sess, "BASH_REMATCH", m[0]); return !!m; }
+        if (/^-(eq|ne|lt|le|gt|ge)$/.test(op)) {
+          var B2 = str(rawB);
+          return binaryTest(op, String(A.trim() === "" ? 0 : arith(sess, A)), String(B2.trim() === "" ? 0 : arith(sess, B2)));
+        }
         return binaryTest(op, A, str(rawB));
       }
       return str(a) !== "";
@@ -1328,7 +1408,7 @@
     dirNode: dirNode, fileNode: fileNode, linkNode: linkNode, mkdirs: mkdirs, put: put, makeSystem: makeSystem, newSession: newSession, childSession: childSession, subshell: subshell,
     lookup: lookup, can: can, writeFile: writeFile, readFile: readFile, absPath: absPath, normAbs: normAbs, splitPath: splitPath,
     passwd: passwd, groups: groups, userByName: userByName, userById: userById, groupByName: groupByName, groupById: groupById, uname: uname, gname: gname, supplementary: supplementary, setUser: setUser,
-    getVar: lookupVar, setVar: setVar, exportedEnv: exportedEnv, parse: parse, runSource: runSource, runLine: runLine, runCommand: runCommand, runScriptFile: runScriptFile, resolveCommand: resolveCommand, execFound: execFound,
+    getVar: lookupVar, setVar: setVar, runTrap: runTrap, runScriptBody: runScriptBody, shMsg: shMsg, fatal: fatal, exportedEnv: exportedEnv, parse: parse, runSource: runSource, runLine: runLine, runCommand: runCommand, runScriptFile: runScriptFile, resolveCommand: resolveCommand, execFound: execFound,
     expandWord: expandWord, expandString: expandString, glob: glob, globMatch: globMatch, globRegexSrc: globRegexSrc, sortNames: sortNames, arith: arith,
     parseSize: parseSize, isPlainFailure: isPlainFailure, execNode: execNode, ExitSignalCls: ExitSignal, StepLimit: StepLimit,
     login: login, unaryTest: unaryTest, binaryTest: binaryTest, termLines: termLines, termWrite: termWrite, prompt: prompt, activeShell: activeShell, step: step, readSys: readSys, uidOf: uidOf, gidOf: gidOf

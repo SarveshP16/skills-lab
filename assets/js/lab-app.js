@@ -746,7 +746,7 @@
     var src = state.drill || state.lab;
     print(promptText + "\u0001" + line, "cmd");
     runner.call({ type: "read", code: termHist, path: path, root: asRoot, files: src.files || {}, prelude: src.prelude || "", system: src.system }).then(function (res) {
-      if (!res || res.error) { print(m[2] + ": " + ((res && res.error) || "can't open " + path), "err"); return; }
+      if (!res || res.error) { print(m[2] + ": " + ((res && res.error) || "can't open " + path), "err"); if (!state.running) termNext(); return; }
       var e = edEl();
       e.cur = { path: path, root: asRoot, orig: res.content, exists: res.exists };
       e.name.innerHTML = "<b>" + esc(m[2] === "code" ? "editor" : m[2]) + "</b> · " + esc(path) + (res.exists ? "" : ' <span class="new">(new file)</span>') + (res.writable === false ? ' <span class="ro">(read-only for you: saving will fail without sudo)</span>' : "");
@@ -763,6 +763,7 @@
     if (!saved) print("(closed " + ed.cur.path + " without saving)", "sys");
     if (!saved) ed.cur = null;
     $("repl").focus();
+    if (!saved && !state.running) termNext();
   }
   function b64(text) { return btoa(unescape(encodeURIComponent(text))); }
   function saveEditor() {
@@ -772,15 +773,18 @@
     var cur = ed.cur;
     closeEditor(true);
     ed.cur = null;
-    if (text === cur.orig && cur.exists) { print("(no changes to " + cur.path + ")", "sys"); return; }
+    if (text === cur.orig && cur.exists) { print("(no changes to " + cur.path + ")", "sys"); if (!state.running) termNext(); return; }
     // the "nano FILE" line printed when the panel opened is replaced by the replayed one
     if (out.lastChild && out.lastChild.className === "cmd") out.removeChild(out.lastChild);
-    termQueue.push("@edit" + (cur.root ? "!" : "") + " " + encodeURIComponent(cur.path) + " " + b64(text));
+    // the save goes first: commands typed after "nano" are still waiting in the queue
+    termQueue.unshift("@edit" + (cur.root ? "!" : "") + " " + encodeURIComponent(cur.path) + " " + b64(text));
     if (!state.running) termNext();
   }
   // Commands typed while the previous one is still being checked wait their turn.
   function termNext() {
     if (!termQueue.length) return;
+    // "nano FILE" typed while another command was running: open the editor now; the rest of the queue waits for it.
+    if (CFG.editor && EDIT_RE.test(termQueue[0])) { openEditor(termQueue.shift()); return; }
     var code = termQueue.shift();
     termHist = termHist ? termHist + "\n" + code : code;
     SL.setCode(TRACK, codeKey(), termHist);
