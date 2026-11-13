@@ -1205,7 +1205,7 @@
     if (sub === "list") {
       var st = f.state || "open", labs = splitList(f.label);
       var list = r.items.filter(function (x) { return x.type === "issue" && (st === "all" || x.state === st) && labs.every(function (l) { return x.labels.indexOf(l) >= 0; }) && (!f.assignee || splitList(f.assignee).every(function (a) { return x.assignees.indexOf(a === "@me" ? login : a) >= 0; })) && (!f.author || x.author === (f.author === "@me" ? login : f.author)); }).sort(function (x, y) { return y.n - x.n; });
-      if (!list.length) { c.o.err("no " + (st === "all" ? "" : st + " ") + "issues match your search in " + r.full); return 0; }
+      if (!list.length) { c.o.err(labs.length || f.assignee || f.author ? "no issues match your search in " + r.full : "no " + (st === "all" ? "" : st + " ") + "issues in " + r.full); return 0; }
       c.o.line("\nShowing " + list.length + " of " + list.length + " " + (st === "all" ? "" : st + " ") + "issues in " + r.full + (labs.length ? " that match your search" : "") + "\n\nID   TITLE" + new Array(31).join(" ") + "LABELS                 UPDATED");
       list.forEach(function (x) { c.o.line(issueLine(c.sys, x)); });
       return 0;
@@ -1293,7 +1293,7 @@
     if (sub === "list") {
       var st = f.state || "open", labs2 = splitList(f.label);
       var list = r.items.filter(function (x) { return x.type === "pr" && (st === "all" || x.state === st || (st === "closed" && x.state === "merged")) && labs2.every(function (l) { return x.labels.indexOf(l) >= 0; }) && (!f.author || x.author === (f.author === "@me" ? login : f.author)); }).sort(function (x, y) { return y.n - x.n; });
-      if (!list.length) { c.o.err("no " + (st === "all" ? "" : st + " ") + "pull requests match your search in " + r.full); return 0; }
+      if (!list.length) { c.o.err(labs2.length || f.author ? "no pull requests match your search in " + r.full : "no " + (st === "all" ? "" : st + " ") + "pull requests in " + r.full); return 0; }
       c.o.line("\nShowing " + list.length + " of " + list.length + " " + (st === "all" ? "" : st + " ") + "pull requests in " + r.full + "\n\nID   TITLE" + new Array(31).join(" ") + "BRANCH" + new Array(17).join(" ") + "CREATED AT");
       list.forEach(function (x) { c.o.line(X.pad("#" + x.n, 5) + X.pad(x.title, 34) + " " + X.pad((x.headRepo !== r.full ? x.headRepo.split("/")[0] + ":" : "") + x.head, 22) + " " + ago(c.sys, x.created)); });
       return 0;
