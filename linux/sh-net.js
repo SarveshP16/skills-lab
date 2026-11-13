@@ -839,6 +839,7 @@
     "github-api": function () { return { status: 200, headers: { "Content-Type": "application/json; charset=utf-8", Server: "github.com" }, body: "{\n  \"current_user_url\": \"https://api.github.com/user\",\n  \"repository_url\": \"https://api.github.com/repos/{owner}/{repo}\"\n}\n" }; },
     google: function (req) { return { status: 301, headers: { Location: "http://www.google.com/", "Content-Type": "text/html; charset=UTF-8", Server: "gws" }, body: "<HTML><HEAD><meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\n<TITLE>301 Moved</TITLE></HEAD><BODY>\n<H1>301 Moved</H1>\nThe document has moved\n<A HREF=\"http://www.google.com/\">here</A>.\r\n</BODY></HTML>\r\n" }; }
   };
+  M2.net.SITES = SITES;
   // one HTTP request from a session on sys. Returns {err:{code,msg}} or {status, headers, body, ip}
   function httpRequest(sys, req) {
     var ip = req.resolveTo || resolve(sys, req.host);
@@ -859,7 +860,7 @@
     } else {
       var site = c.info && SITES[c.info.site];
       if (!site) return { err: { code: req.port === 5432 || req.port === 22 ? 1 : 52, msg: req.port === 5432 || req.port === 22 ? "Received HTTP/0.9 when not allowed" : "Empty reply from server" }, ip: ip };
-      r = site(req);
+      r = site(req, sys);
       r.headers = Object.assign({ Date: httpDate(sys.now) }, r.headers);
       if (!r.headers["Content-Length"]) r.headers["Content-Length"] = String(bytes(r.body));
     }

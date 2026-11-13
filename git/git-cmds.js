@@ -175,7 +175,7 @@
       if (idx.conflicts[p]) return;
       var a = hf[p], b = idx.entries[p];
       if (G.same(a, b)) return;
-      if (!a) added.push(p); else if (!b) deleted.push(p); else st.staged.push({ type: a.sha === b.sha ? "typechange" : "modified", path: p, mode: a.mode !== b.mode });
+      if (!a) added.push(p); else if (!b) deleted.push(p); else st.staged.push({ type: (a.mode === "120000") !== (b.mode === "120000") ? "typechange" : "modified", path: p, mode: a.mode !== b.mode });
     });
     // exact renames
     deleted.slice().forEach(function (d) {
@@ -428,6 +428,18 @@
       c.o.hint("Use -f if you really want to add them.\nTurn this message off by running\n\"git config advice.addIgnoredFile false\"");
       return 1;
     }
+    return 0;
+  }
+  // git update-index --chmod=+x FILE: set the executable bit in the index (the file on disk is untouched)
+  function cmdUpdateIndex(c, args) {
+    needWork(c);
+    var chmod = null, files = [];
+    args.forEach(function (x) { var m = /^--chmod=([+-])x$/.exec(x); if (m) chmod = m[1]; else if (x === "--add" || x === "--refresh" || x === "-q" || x === "--") return; else if (/^-/.test(x)) die(c, "error: unknown option '" + x.replace(/^-+/, "") + "'\nusage: git update-index [<options>] [--] [<file>...]", 129); else files.push(x); });
+    if (!chmod) { if (args.indexOf("--refresh") >= 0) return 0; die(c, "usage: git update-index [<options>] [--] [<file>...]\n\n    --chmod (+|-)x        override the executable bit of the listed files", 129); }
+    var idx = G.readIndex(c.repo);
+    files.forEach(function (f) { var rel = relOrDie(c, f); if (!idx.entries[rel]) die(c, "error: " + f + ": cannot add to the index - missing --add option?\nfatal: Unable to process path " + f, 128); });
+    files.forEach(function (f) { var rel = toRel(c, f), e = idx.entries[rel]; if (e.mode !== "120000") idx.entries[rel] = Object.assign({}, e, { mode: chmod === "+" ? "100755" : "100644" }); });
+    G.writeIndex(c.repo, idx);
     return 0;
   }
   function cmdRm(c, args) {
@@ -2781,7 +2793,7 @@
     "cherry-pick": { fn: function (c, a) { return pickLike(c, "cherry-pick", a); } }, merge: { fn: cmdMerge }, stash: { fn: cmdStash }, tag: { fn: cmdTag }, describe: { fn: cmdDescribe },
     blame: { fn: cmdBlame }, bisect: { fn: cmdBisect }, reflog: { fn: cmdReflog }, "ls-files": { fn: cmdLsFiles }, "cat-file": { fn: cmdCatFile }, "rev-parse": { fn: cmdRevParse, repo: false },
     "hash-object": { fn: cmdHashObject, repo: false }, shortlog: { fn: cmdShortlog }, grep: { fn: cmdGrep }, "check-ignore": { fn: cmdCheckIgnore }, clean: { fn: cmdClean },
-    "merge-base": { fn: cmdMergeBase }, "rev-list": { fn: cmdRevList }, "ls-tree": { fn: cmdLsTree }, "show-ref": { fn: cmdShowRef }, "symbolic-ref": { fn: cmdSymbolicRef }, "update-ref": { fn: cmdUpdateRef },
+    "merge-base": { fn: cmdMergeBase }, "rev-list": { fn: cmdRevList }, "ls-tree": { fn: cmdLsTree }, "show-ref": { fn: cmdShowRef }, "symbolic-ref": { fn: cmdSymbolicRef }, "update-ref": { fn: cmdUpdateRef }, "update-index": { fn: cmdUpdateIndex },
     "write-tree": { fn: cmdWriteTree }, "count-objects": { fn: cmdCountObjects }, gc: { fn: cmdGc }, fsck: { fn: cmdFsck }, whatchanged: { fn: cmdWhatchanged },
     help: { fn: cmdHelp, repo: false }, version: { fn: function (c) { c.o.line("git version " + VERSION); return 0; }, repo: false }
   };

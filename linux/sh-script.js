@@ -380,7 +380,7 @@
       var re = /(?:^|[\s;&|(])(?:(?:local|export|declare|readonly|typeset)\s+(?:-\w+\s+)*)?([A-Za-z_]\w*)\+?=/g, m;
       while ((m = re.exec(c))) { if (!assigned[m[1]]) assigned[m[1]] = { line: idx + 1, col: m.index + m[0].indexOf(m[1]), exported: /\bexport\s/.test(c) }; }
       var fm = /\bfor\s+([A-Za-z_]\w*)\s+in\b/.exec(c); if (fm && !assigned[fm[1]]) assigned[fm[1]] = { line: idx + 1, col: c.indexOf(fm[1]), loop: true };
-      var rm2 = /(?:^|[\s;&|]|while\s+|if\s+)read\s+((?:-[a-zA-Z]+\s+(?:\S+\s+)?)*)([A-Za-z_][\w\s]*)/.exec(c);
+      var rm2 = /(?:^|[\s;&|]|while\s+|if\s+)read\s+((?:-[a-zA-Z]*[ptdnNua]\s+\S+\s+|-[a-zA-Z]+\s+)*)([A-Za-z_][\w ]*)/.exec(c);
       if (rm2) rm2[2].trim().split(/\s+/).forEach(function (n) { if (/^[A-Za-z_]\w*$/.test(n) && !assigned[n]) assigned[n] = { line: idx + 1, col: c.indexOf(n), read: true }; });
       var gm = /\bgetopts\s+\S+\s+([A-Za-z_]\w*)/.exec(c); if (gm && !assigned[gm[1]]) assigned[gm[1]] = { line: idx + 1, col: c.indexOf(gm[1]), used: true };
       var xm = /\bexport\s+([A-Za-z_]\w*)\s*$/.exec(c); if (xm) referenced[xm[1]] = true;

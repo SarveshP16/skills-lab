@@ -67,8 +67,11 @@
   GH.audit = function (sys, actor, action, data) { hub(sys).audit.push(Object.assign({ "@timestamp": now(sys) * 1000, actor: actor, action: action }, data || {})); };
 
   /* ================================================================== people, tokens, access */
+  var BOT = "github-actions[bot]";
+  GH.BOT = BOT;
   function role(sys, r, login) {
     if (!login) return r.private ? null : "read";
+    if (login === BOT) { var b = hub(sys)._bot; if (!b || b.repo !== r.full) return r.private ? null : "read"; var cp = b.perms.contents || "none"; return cp === "write" ? "write" : cp === "read" || !r.private ? "read" : null; }
     if (r.owner === login) return "admin";
     if (r.collab[login]) return r.collab[login];
     var org = hub(sys).orgs[r.owner];
@@ -77,6 +80,14 @@
   }
   function can(sys, r, login, need) { var x = role(sys, r, login); return !!x && RANK[x] >= RANK[need]; }
   GH.role = role; GH.can = can;
+  // gh run with the workflow's GITHUB_TOKEN: each scope (contents, issues, pull-requests, ...) needs write.
+  GH.botDenied = function (c, r, scope) {
+    if (ghLogin(c) !== BOT) return false;
+    var b = hub(c.sys)._bot, lvl = b && b.repo === r.full ? b.perms[scope] || "none" : "none";
+    if (lvl === "write") return false;
+    c.o.err("HTTP 403: Resource not accessible by integration (https://api.github.com/repos/" + r.full + ")");
+    return true;
+  };
   GH.newToken = function (sys, login, o) {
     o = o || {};
     var h = hub(sys); h.seq++;
@@ -131,6 +142,8 @@
   }
   function httpsCred(c, p) {
     if (p.cred) { var parts = p.cred.split(":"); return parts.length > 1 ? parts[1] : parts[0]; }
+    var xh = c.repo ? G.configGet(c.sys, c.repo, c.uid, "http.https://github.com/.extraheader", c.cfgExtra) : null;
+    if (xh) { var mm = /basic\s+(\S+)/i.exec(xh), dec = mm ? GH.b64decode(mm[1]) : ""; if (/^x-access-token:/.test(dec)) return dec.slice(15); }
     var helpers = credHelpers(c);
     for (var i = 0; i < helpers.length; i++) {
       var hp = helpers[i];
@@ -213,7 +226,10 @@
     }
     return { repo: r, login: login, p: p, token: a.token || null };
   }
-  GH.connect = connect;
+  GH.connect = connect; GH.addFetchSpec = function (sys, repo, n, u) { addFetchSpec(sys, repo, n, u); }; GH.writeConfig = function (sys, repo, pairs) { writeConfig(sys, repo, pairs); }; GH.storeReachable = function (sys, repo, tips) { storeReachable(sys, repo, tips); };
+  var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  GH.b64encode = function (str) { var b = unescape(encodeURIComponent(String(str))), out = "", i; for (i = 0; i < b.length; i += 3) { var n = (b.charCodeAt(i) << 16) | ((b.charCodeAt(i + 1) || 0) << 8) | (b.charCodeAt(i + 2) || 0); out += B64.charAt(n >> 18 & 63) + B64.charAt(n >> 12 & 63) + (i + 1 < b.length ? B64.charAt(n >> 6 & 63) : "=") + (i + 2 < b.length ? B64.charAt(n & 63) : "="); } return out; };
+  GH.b64decode = function (str) { var s2 = String(str).replace(/[^A-Za-z0-9+/]/g, ""), out = "", i; for (i = 0; i < s2.length; i += 4) { var n = (B64.indexOf(s2.charAt(i)) << 18) | (B64.indexOf(s2.charAt(i + 1)) << 12) | ((B64.indexOf(s2.charAt(i + 2)) & 63) << 6) | (B64.indexOf(s2.charAt(i + 3)) & 63); out += String.fromCharCode(n >> 16 & 255); if (i + 2 < s2.length) out += String.fromCharCode(n >> 8 & 255); if (i + 3 < s2.length) out += String.fromCharCode(n & 255); } try { return decodeURIComponent(escape(out)); } catch (e) { return out; } };
 
   /* ================================================================== object counts (for the progress lines) */
   function newObjects(sys, tips, haves) {
@@ -938,8 +954,10 @@
     if (h._globals) return;
     h._globals = true;
     h.hooks.unshift({ event: "push", fn: function (sys2, d) { if (!d.viaPR && d.after && d.ref === "refs/heads/" + d.repo.default && d.before !== undefined) closeLinked(sys2, d.repo, GH.newCommits(sys2, d.before, d.after).map(function (s) { return G.commitOf(sys2, s).message; }).join("\n"), d.pusher, null); } });
+    GH.GLOBAL.forEach(function (fn) { fn(sys, h); });
     h.hooks.unshift({ event: "push", fn: function (sys2, d) { if (!d.after) return; d.repo.items.forEach(function (pr) { if (pr.type === "pr" && pr.state === "open" && (GH.find(sys2, pr.headRepo) === d.repo) && d.ref === "refs/heads/" + pr.head) GH.emit(sys2, "pr.synchronize", { repo: d.repo, pr: pr, before: d.before, after: d.after }); }); } });
   }
+  GH.GLOBAL = [];
   var hubOrig = hub;
   hub = function (sys) { var h = hubOrig(sys); if (!h._globals) globalHooks(sys); return h; };
   GH.hub = hub;
@@ -970,6 +988,7 @@
   }
   // The repository gh works with: -R/--repo, else the local repo's remotes (gh-resolved=base, then upstream, github, origin).
   function ghRepo(c, explicit) {
+    explicit = explicit || S.getVar(c.sess, "GH_REPO") || null;
     if (explicit) { var r0 = GH.find(c.sys, explicit); if (!r0) { c.o.err("GraphQL: Could not resolve to a Repository with the name '" + explicit + "'. (repository)"); return null; } return r0; }
     if (!c.repo) { c.o.err("failed to run git: fatal: not a git repository (or any of the parent directories): .git"); return null; }
     var names = remoteNames(c), pick = null;
@@ -982,7 +1001,7 @@
     if (!r) { c.o.err("GraphQL: Could not resolve to a Repository with the name '" + p.full + "'. (repository)"); return null; }
     return r;
   }
-  GH.ghRepo = ghRepo;
+  GH.ghRepo = ghRepo; GH.splitList = function (v) { return splitList(v); }; GH.prRef = function (c, r, a) { return prRef(c, r, a); };
   function flags(args, spec) {
     var o = { _: [] }, i;
     for (i = 0; i < args.length; i++) {
@@ -996,6 +1015,7 @@
     }
     return o;
   }
+  GH.flags = flags; GH.needAuth = needAuth; GH.ghLogin = ghLogin; GH.ghCtx = ghCtx;
   function splitList(v) { return [].concat(v || []).join(",").split(",").map(function (x) { return x.trim(); }).filter(Boolean); }
   function prRef(c, r, arg) {
     if (arg === undefined) {
@@ -1202,6 +1222,7 @@
     var sub = a[0], f = flags(a.slice(1), { vals: ["title", "t", "body", "b", "label", "l", "assignee", "a", "state", "s", "reason", "r", "comment", "c", "add-label", "remove-label", "add-assignee", "R", "repo", "author", "A", "search", "S", "json", "jq", "q", "limit", "L", "body-file", "F", "base", "name", "n"], multi: ["label", "add-label", "remove-label", "assignee", "add-assignee"], short: { t: "title", b: "body", l: "label", a: "assignee", s: "state", r: "reason", c: "comment", R: "repo", A: "author", S: "search", q: "jq", L: "limit", F: "body-file", n: "name" } });
     var login = needAuth(c); if (!login) return 4;
     var r = ghRepo(c, f.repo); if (!r) return 1;
+    if (["list", "view", "status"].indexOf(sub) < 0 && GH.botDenied(c, r, "issues")) return 1;
     if (sub === "list") {
       var st = f.state || "open", labs = splitList(f.label);
       var list = r.items.filter(function (x) { return x.type === "issue" && (st === "all" || x.state === st) && labs.every(function (l) { return x.labels.indexOf(l) >= 0; }) && (!f.assignee || splitList(f.assignee).every(function (a) { return x.assignees.indexOf(a === "@me" ? login : a) >= 0; })) && (!f.author || x.author === (f.author === "@me" ? login : f.author)); }).sort(function (x, y) { return y.n - x.n; });
@@ -1262,6 +1283,7 @@
     var sub = a[0], f = flags(a.slice(1), { vals: ["title", "t", "body", "b", "base", "B", "head", "H", "label", "l", "assignee", "a", "reviewer", "r", "state", "s", "R", "repo", "add-reviewer", "add-label", "remove-label", "subject", "body-file", "F", "json", "jq", "q", "author", "A", "search", "S", "limit", "L", "match-head-commit"], multi: ["label", "reviewer", "add-reviewer", "add-label", "assignee"], short: { t: "title", b: "body", B: "base", H: "head", l: "label", a: "assignee", r: "reviewer", s: "state", R: "repo", F: "body-file", q: "jq", A: "author", S: "search", L: "limit", d: "delete-branch", c: "comment", f: "fill", m: "merge" } });
     var login = needAuth(c); if (!login) return 4;
     var r = ghRepo(c, f.repo); if (!r) return 1;
+    if (["list", "view", "diff", "checks", "checkout", "status"].indexOf(sub) < 0 && GH.botDenied(c, r, "pull-requests")) return 1;
     if (sub === "create") {
       if (!c.repo && !f.head) { c.o.err("could not determine the current branch: not on any branch"); return 1; }
       var h = c.repo ? G.head(c.repo) : null, branch = f.head || (h && h.branch);
@@ -1366,6 +1388,8 @@
       if (!allowed) { c.o.err("GraphQL: " + { merge: "Merge commits are", squash: "Squash merges are", rebase: "Rebase merges are" }[how] + " not allowed on this repository. (mergePullRequest)"); return 1; }
       var bl2 = GH.blockers(c.sys, r, pr2);
       var admin = role(c.sys, r, login) === "admin", prot = protectionFor(r, pr2.base);
+      if (f.auto && r.settings.autoMerge) pr2.autoRequested = true;
+      if (f.auto && !r.settings.autoMerge) { c.o.err("GraphQL: Auto merge is not allowed for this repository (enablePullRequestAutoMerge)"); return 1; }
       if (bl2.length && f.auto) { pr2.autoMerge = { method: how, by: login, deleteBranch: !!f["delete-branch"] }; c.o.line("✓ Pull request " + r.full + "#" + pr2.n + " will be automatically merged via " + how + " when all requirements are met"); return 0; }
       var conflictOnly = bl2.filter(function (x) { return /conflicts/.test(x); }).length;
       if (bl2.length && !(f.admin && admin && (!prot || !prot.enforceAdmins) && !conflictOnly)) {
@@ -1463,7 +1487,7 @@
     if (status === 204) return 0;
     var text = JSON.stringify(data, null, f.jq ? 0 : 2);
     if (status >= 400) { c.o.err("gh: " + (data && data.message ? data.message.split("\n")[0] : "Error") + " (HTTP " + status + ")"); c.o.line(JSON.stringify(data)); return 1; }
-    if (f.jq) { var rc = S.runCommand(c.sess, ["jq", "-r", f.jq], { stdin: text + "\n", out: c.io.out, err: c.io.err, pipedIn: true }); return rc; }
+    if (f.jq) { var rc = S.CMDS.jq(["jq", "-r", f.jq], { stdin: text + "\n", out: c.io.out, err: c.io.err, pipedIn: true }, c.sess); return rc; }
     c.o.line(text);
     return 0;
   }
