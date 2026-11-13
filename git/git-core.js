@@ -68,8 +68,12 @@
   function commitText(c) {
     var t = "tree " + c.tree + "\n";
     c.parents.forEach(function (p) { t += "parent " + p + "\n"; });
-    return t + "author " + identLine(c.author) + "\ncommitter " + identLine(c.committer) + "\n\n" + c.message;
+    t += "author " + identLine(c.author) + "\ncommitter " + identLine(c.committer) + "\n";
+    if (c.gpgsig) t += "gpgsig " + c.gpgsig.replace(/\n$/, "").split("\n").join("\n ") + "\n";
+    return t + "\n" + c.message;
   }
+  // the bytes a signature covers: the commit without its gpgsig header
+  function commitPayload(c) { return commitText(Object.assign({}, c, { gpgsig: null })); }
   function tagText(o) { return "object " + o.object + "\ntype " + o.objtype + "\ntag " + o.tag + "\ntagger " + identLine(o.tagger) + "\n\n" + o.message; }
   function putObject(sys, obj) {
     var body;
@@ -1065,6 +1069,7 @@
   function abbrev(sha, n) { return sha ? sha.slice(0, n || 7) : ""; }
 
   var api = {
+    commitText: commitText, commitPayload: commitPayload, tagText: tagText,
     utf8: utf8, sha1: sha1, blobSha: blobSha, putObject: putObject, getObject: getObject, objSize: objSize, commitOf: commitOf, peel: peel, flatTree: flatTree, commitFlat: commitFlat, writeTree: writeTree, blobText: blobText,
     nodeAt: nodeAt, ensureDir: ensureDir, putFile: putFile, removePath: removePath, readText: readText, pruneEmptyDirs: pruneEmptyDirs,
     findRepo: findRepo, repoAt: repoAt, gpath: gpath, gread: gread, gwrite: gwrite, gremove: gremove, gexists: gexists, initRepo: initRepo,

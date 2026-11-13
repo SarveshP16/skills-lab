@@ -512,7 +512,7 @@
       if (auto && !upR) o["set-upstream"] = true;
       specs.push({ src: h.ref, sha: h.sha, dst: h.ref, force: false });
     }
-    if (o.tags || o["follow-tags"]) G.listRefs(repo, "refs/tags/").forEach(function (t) { if (!specs.some(function (s) { return s.dst === t.name; })) specs.push({ src: t.name, sha: t.sha, dst: t.name, force: false, tag: true, onlyNew: true }); });
+    if (o.tags || o["follow-tags"]) G.listRefs(repo, "refs/tags/").forEach(function (t) { if (!specs.some(function (s) { return s.dst === t.name; })) specs.push({ src: t.name, sha: t.sha, dst: t.name, force: !!o.force, tag: true, onlyNew: !o.tags }); });
     specs.forEach(function (s) { if (s.src && !s.sha) s.sha = G.resolveRefName(repo, s.src).sha; });
     if (!o["no-verify"]) {
       var hookIn = specs.map(function (s) { return (s.src || "(delete)") + " " + (s.sha || G.zero()) + " " + s.dst + " " + G.zero(); }).join("\n") + "\n";
@@ -523,14 +523,14 @@
     }
     var conn = connect(c, url, "write");
     if (!conn) return c.lastCode || 128;
-    var r = conn.repo, results = [], remoteLines = [], updated = [], rejected = false, reasonFetch = false, reasonBehind = false;
+    var r = conn.repo, results = [], remoteLines = [], updated = [], sameSpecs = [], rejected = false, reasonFetch = false, reasonBehind = false;
     var force = !!o.force;
     specs.forEach(function (s) {
       var old = r.refs[s.dst] || null, nw = s.sha || null, srcShown = (s.src || "").replace(/^refs\/(heads|tags)\//, ""), dstShown = s.dst.replace(/^refs\/(heads|tags)\//, "");
       var label = (srcShown ? srcShown + " -> " : "") + dstShown;
       if (s.onlyNew && old) return;
       if (nw === null) { if (!old) { results.push(" ! [rejected]        " + dstShown + " (remote ref does not exist)"); rejected = true; return; } }
-      else if (old === nw) { results.push({ up: true, text: "Everything up-to-date" }); return; }
+      else if (old === nw) { results.push({ up: true, text: "Everything up-to-date" }); sameSpecs.push({ s: s, dstShown: dstShown }); return; }
       var isTag = /^refs\/tags\//.test(s.dst);
       var ff = !old || nw === null || (!isTag && G.isAncestor(c.sys, old, G.peel(c.sys, nw)));
       if (o["force-with-lease"] !== undefined && old && nw) {
@@ -578,7 +578,7 @@
       var printed = results.filter(function (x) { return !x.up; });
       if (printed.length) c.o.line("To " + shownUrl(conn.p, true) + "\n" + printed.join("\n"));
     }
-    if (o["set-upstream"] && !rejected) updated.forEach(function (u) { if (/^refs\/heads\//.test(u.s.dst) && u.s.src && /^refs\/heads\//.test(u.s.src) && isNamed) { X.setUpstream(c, u.s.src.slice(11), "refs/remotes/" + remote + "/" + u.dstShown); c.o.line("branch '" + u.s.src.slice(11) + "' set up to track '" + remote + "/" + u.dstShown + "'."); } });
+    if (o["set-upstream"] && !rejected) updated.concat(sameSpecs).forEach(function (u) { if (/^refs\/heads\//.test(u.s.dst) && u.s.src && /^refs\/heads\//.test(u.s.src) && isNamed) { X.setUpstream(c, u.s.src.slice(11), "refs/remotes/" + remote + "/" + u.dstShown); c.o.line("branch '" + u.s.src.slice(11) + "' set up to track '" + remote + "/" + u.dstShown + "'."); } });
     updated.forEach(function (u) { GH.emit(c.sys, "push", { repo: r, ref: u.s.dst, before: u.old, after: u.nw, pusher: conn.login, forced: u.forced, deploy: !!conn.deploy, viaToken: conn.token || null, proto: conn.p.proto, lease: o["force-with-lease"] !== undefined }); });
     c.sys.pushLog = (c.sys.pushLog || []).concat(updated.map(function (u) { return { repo: r.full, ref: u.s.dst, after: u.nw, proto: conn.p.proto, forced: u.forced, lease: o["force-with-lease"] !== undefined }; }));
     if (rejected) {
@@ -737,12 +737,12 @@
     var who = X.softIdent(c);
     if (cmd === "squash" || cmd === "fixup") {
       var msg = cmd === "fixup" ? cur.message : cur.message.replace(/\n+$/, "") + "\n\n" + co.message;
-      var nsha = G.putObject(sys, { type: "commit", tree: tree, parents: cur.parents, author: cur.author, committer: committer, message: msg });
+      var nco = { type: "commit", tree: tree, parents: cur.parents, author: cur.author, committer: committer, message: msg }; if (root.GitSign) root.GitSign.maybe(c, nco); var nsha = G.putObject(sys, nco);
       G.setHead(repo, nsha, "rebase (" + cmd + "): " + subject(msg), who);
       return { sha: nsha };
     }
     if (tree === cur.tree && cmd === "pick") { c.o.err("dropping " + sha + " " + subject(co.message) + " -- patch contents already upstream"); return { empty: true }; }
-    var csha = G.putObject(sys, { type: "commit", tree: tree, parents: [h.sha], author: co.author, committer: committer, message: co.message });
+    var cco = { type: "commit", tree: tree, parents: [h.sha], author: co.author, committer: committer, message: co.message }; if (root.GitSign) root.GitSign.maybe(c, cco); var csha = G.putObject(sys, cco);
     G.setHead(repo, csha, "rebase (" + (cmd === "reword" ? "reword" : "pick") + "): " + subject(co.message), who);
     X.storeObjects(c);
     return { sha: csha };
@@ -912,6 +912,8 @@
     return out;
   };
   var GHBOT = { name: "GitHub", email: "noreply@github.com" };
+  // commits GitHub makes itself (merge buttons) are signed with its web-flow key
+  function webflow(co) { if (GH.signWeb) GH.signWeb(co); return co; }
   GH.mergePR = function (sys, r, pr, how, login, o) {
     o = o || {};
     var head = prHeadSha(sys, r, pr), baseRef = "refs/heads/" + pr.base, base = r.refs[baseRef];
@@ -922,18 +924,18 @@
     var newTip;
     if (how === "merge") {
       var mr = G.mergeTrees(sys, G.commitFlat(sys, mb), G.commitFlat(sys, base), G.commitFlat(sys, head), ["base", "head"]);
-      newTip = G.putObject(sys, { type: "commit", tree: G.writeTree(sys, mr.entries), parents: [base, head], author: who, committer: committer, message: (o.subject || "Merge pull request #" + pr.n + " from " + pr.headRepo.split("/")[0] + "/" + pr.head) + "\n\n" + (o.body !== undefined ? o.body : pr.title) + "\n" });
+      newTip = G.putObject(sys, webflow({ type: "commit", tree: G.writeTree(sys, mr.entries), parents: [base, head], author: who, committer: committer, message: (o.subject || "Merge pull request #" + pr.n + " from " + pr.headRepo.split("/")[0] + "/" + pr.head) + "\n\n" + (o.body !== undefined ? o.body : pr.title) + "\n" }));
     } else if (how === "squash") {
       var mr2 = G.mergeTrees(sys, G.commitFlat(sys, mb), G.commitFlat(sys, base), G.commitFlat(sys, head), ["base", "head"]);
       var bodyText = o.body !== undefined ? o.body : commits.map(function (s) { return "* " + subject(G.commitOf(sys, s).message); }).join("\n\n");
       var aut = G.commitOf(sys, commits[0] || head).author;
-      newTip = G.putObject(sys, { type: "commit", tree: G.writeTree(sys, mr2.entries), parents: [base], author: { name: aut.name, email: aut.email, time: t, tz: "+0000" }, committer: committer, message: (o.subject || pr.title + " (#" + pr.n + ")") + (bodyText ? "\n\n" + bodyText : "") + "\n" });
+      newTip = G.putObject(sys, webflow({ type: "commit", tree: G.writeTree(sys, mr2.entries), parents: [base], author: { name: aut.name, email: aut.email, time: t, tz: "+0000" }, committer: committer, message: (o.subject || pr.title + " (#" + pr.n + ")") + (bodyText ? "\n\n" + bodyText : "") + "\n" }));
     } else {
       newTip = base;
       commits.forEach(function (s) {
         var co = G.commitOf(sys, s), pf = co.parents[0] ? G.commitFlat(sys, co.parents[0]) : {};
         var mr3 = G.mergeTrees(sys, pf, G.commitFlat(sys, newTip), G.commitFlat(sys, s), ["base", "head"]);
-        newTip = G.putObject(sys, { type: "commit", tree: G.writeTree(sys, mr3.entries), parents: [newTip], author: co.author, committer: committer, message: co.message });
+        newTip = G.putObject(sys, webflow({ type: "commit", tree: G.writeTree(sys, mr3.entries), parents: [newTip], author: co.author, committer: committer, message: co.message }));
       });
     }
     r.refs[baseRef] = newTip;

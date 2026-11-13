@@ -597,6 +597,7 @@
 
   /* ================================================================== runners */
   var RUNNER_HOME = "/home/runner";
+  A.envHooks = [];
   var NODE_DEFAULT = "20.19.5";
   function makeRunner(sys, seed) {
     var host = "fv-az" + (100 + seed % 800) + "-" + (100 + hash("h" + seed) % 900);
@@ -736,6 +737,7 @@
       GITHUB_ACTION_REPOSITORY: "", GITHUB_RETENTION_DAYS: "90"
     };
     if (J.debug) base.RUNNER_DEBUG = "1";
+    A.envHooks.forEach(function (fn) { fn(J, base); });
     var e = Object.assign(base, envAll);
     sess.vars = {};
     keys(e).forEach(function (k) { sess.vars[k] = { v: String(e[k]), x: true }; });
@@ -1409,7 +1411,7 @@
     if (!r.settings.actions) return;
     var head = GH.prHeadSha(sys, r, pr), base = r.refs["refs/heads/" + pr.base] || pr.baseSha;
     if (!head || !base) return;
-    var fork = pr.headRepo !== r.full, payload = prPayload(sys, r, pr, action, head), actor = actorOf(sys, d.by || d.pusher || pr.author);
+    var fork = pr.headRepo !== r.full || pr.author === "dependabot[bot]", payload = prPayload(sys, r, pr, action, head), actor = actorOf(sys, d.by || d.pusher || pr.author);
     var mb = G.mergeBases(sys, base, head)[0], mr = G.mergeTrees(sys, G.commitFlat(sys, mb), G.commitFlat(sys, base), G.commitFlat(sys, head), ["base", "head"]), merge = null;
     if (!keys(mr.conflicts).length && action !== "closed") {
       var who = { name: "GitHub", email: "noreply@github.com", time: now(sys), tz: "+0000" };
@@ -1980,7 +1982,7 @@
   }
   A.satisfies = satisfies;
   // A package-lock.json for a package.json: each dependency pinned, plus a few of its own dependencies.
-  var TRANSITIVE = ["ansi-styles", "chalk", "debug", "ms", "supports-color", "has-flag", "escape-string-regexp", "picocolors", "source-map-js", "nanoid", "postcss", "entities", "domutils", "domhandler", "argparse", "js-yaml", "minimist", "semver", "commander", "glob"];
+  var TRANSITIVE = ["ansi-styles", "chalk", "debug", "ms", "supports-color", "has-flag", "escape-string-regexp", "picocolors", "source-map-js", "nanoid", "postcss", "entities", "domutils", "domhandler", "argparse", "js-yaml", "yargs", "semver", "commander", "glob"];
   A.lockFor = function (pkg, pins) {
     pins = pins || {};
     var deps = Object.assign({}, pkg.dependencies || {}, pkg.devDependencies || {}), packages = { "": { name: pkg.name, version: pkg.version } };

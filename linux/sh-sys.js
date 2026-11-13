@@ -2367,36 +2367,254 @@
     out(io, joinLines(L));
     return 0;
   };
-  function jqRun(filter, val) {
-    var segs = [], depthP = 0, cur = "", inStr = false;
-    for (var i = 0; i < filter.length; i++) { var ch = filter.charAt(i); if (ch === "\"") inStr = !inStr; if (!inStr && (ch === "(" || ch === "[")) depthP++; if (!inStr && (ch === ")" || ch === "]")) depthP--; if (ch === "|" && !inStr && depthP === 0) { segs.push(cur.trim()); cur = ""; } else cur += ch; }
-    segs.push(cur.trim());
-    var vals = [val];
-    segs.forEach(function (sg) { var next = []; vals.forEach(function (v) { next = next.concat(jqSeg(sg, v)); }); vals = next; });
-    return vals;
-  }
-  function jqSeg(sg, v) {
-    if (sg === "." || sg === "") return [v];
-    if (sg === "length") return [v == null ? 0 : typeof v === "string" || Array.isArray(v) ? v.length : typeof v === "object" ? Object.keys(v).length : Math.abs(v)];
-    if (sg === "keys") { if (v == null || typeof v !== "object") throw new Error((v === null ? "null" : typeof v) + " (" + JSON.stringify(v) + ") has no keys"); return [Array.isArray(v) ? v.map(function (x, i) { return i; }) : Object.keys(v).sort()]; }
-    var m = /^select\((.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)\)$/.exec(sg);
-    if (m) { var lhs = jqRun(m[1], v)[0], rhs = JSON.parse(m[3]); var ok = { "==": lhs === rhs, "!=": lhs !== rhs, ">": lhs > rhs, "<": lhs < rhs, ">=": lhs >= rhs, "<=": lhs <= rhs }[m[2]]; return ok ? [v] : []; }
-    if (sg.charAt(0) !== ".") throw new Error("syntax error, unexpected IDENT");
-    var path = sg.slice(1), res = [v];
-    var re = /^(?:\.?([A-Za-z_][\w-]*)|\.?"([^"]+)"|\[(\d*|-\d+)\])(\?)?/;
-    while (path.length) {
-      var mm = re.exec(path); if (!mm) throw new Error("syntax error near " + path);
-      path = path.slice(mm[0].length);
-      var opt = !!mm[4];
-      res = [].concat.apply([], res.map(function (x) {
-        if (mm[1] !== undefined || mm[2] !== undefined) { var k = mm[1] || mm[2]; if (x === null) return [null]; if (typeof x !== "object" || Array.isArray(x)) { if (opt) return []; throw new Error("Cannot index " + (Array.isArray(x) ? "array" : typeof x) + " with \"" + k + "\""); } return [x[k] === undefined ? null : x[k]]; }
-        if (mm[3] === "") { if (x === null) return []; if (typeof x !== "object") { if (opt) return []; throw new Error("Cannot iterate over " + typeof x); } return Array.isArray(x) ? x : Object.keys(x).map(function (k) { return x[k]; }); }
-        if (!Array.isArray(x)) { if (x === null) return [null]; if (opt) return []; throw new Error("Cannot index " + typeof x + " with number"); }
-        var n = +mm[3]; if (n < 0) n += x.length; return [x[n] === undefined ? null : x[n]];
-      }));
+  // A small jq: pipes, commas, paths, [..] and {..} construction, "\(..)" interpolation, comparisons, and/or/not,
+  // //, arithmetic, and the common built-ins. Filters produce lists of results (jq's streams).
+  function jqTokens(src) {
+    var out = [], i = 0, m;
+    while (i < src.length) {
+      var ch = src.charAt(i), rest = src.slice(i);
+      if (/\s/.test(ch)) { i++; continue; }
+      if (ch === "#") { while (i < src.length && src.charAt(i) !== "\n") i++; continue; }
+      if (ch === "\"") {
+        var parts = [], buf = "", j = i + 1;
+        for (; j < src.length; j++) {
+          var c2 = src.charAt(j);
+          if (c2 === "\\") {
+            var nx = src.charAt(j + 1);
+            if (nx === "(") { var depth = 1, k = j + 2; for (; k < src.length && depth; k++) { if (src.charAt(k) === "(") depth++; else if (src.charAt(k) === ")") depth--; } parts.push(buf); buf = ""; parts.push({ expr: src.slice(j + 2, k - 1) }); j = k - 1; continue; }
+            buf += { n: "\n", t: "\t", r: "\r", "\"": "\"", "\\": "\\", "/": "/" }[nx] !== undefined ? { n: "\n", t: "\t", r: "\r", "\"": "\"", "\\": "\\", "/": "/" }[nx] : nx; j++; continue;
+          }
+          if (c2 === "\"") break;
+          buf += c2;
+        }
+        if (j >= src.length) throw new Error("syntax error, unexpected end of file (unterminated string)");
+        parts.push(buf); out.push({ t: "str", parts: parts }); i = j + 1; continue;
+      }
+      if ((m = /^\d+(\.\d+)?([eE][-+]?\d+)?/.exec(rest))) { out.push({ t: "num", v: +m[0] }); i += m[0].length; continue; }
+      if ((m = /^(==|!=|<=|>=|\/\/|\.\.|\|=|\+=)/.exec(rest))) { out.push({ t: "op", v: m[1] }); i += m[1].length; continue; }
+      if ((m = /^@[a-z0-9]+/.exec(rest))) { out.push({ t: "fmt", v: m[0] }); i += m[0].length; continue; }
+      if ((m = /^\$[A-Za-z_]\w*/.exec(rest))) { out.push({ t: "var", v: m[0] }); i += m[0].length; continue; }
+      if ((m = /^[A-Za-z_][\w]*/.exec(rest))) { out.push({ t: "id", v: m[0] }); i += m[0].length; continue; }
+      if ("|,.[]{}():;<>+-*/%?".indexOf(ch) >= 0) { out.push({ t: "op", v: ch }); i++; continue; }
+      throw new Error("syntax error, unexpected INVALID_CHARACTER");
     }
-    return res;
+    return out;
   }
+  function jqParse(src) {
+    var tk = jqTokens(src), i = 0;
+    function peek(v) { return tk[i] && tk[i].t === "op" && tk[i].v === v; }
+    function idp(v) { return tk[i] && tk[i].t === "id" && tk[i].v === v; }
+    function need(v) { if (!peek(v)) throw new Error("syntax error, unexpected " + (tk[i] ? "'" + (tk[i].v || "string") + "'" : "end of file") + ", expecting '" + v + "'"); i++; }
+    function pipe() {
+      var l = comma();
+      if (idp("as")) { i++; var name = tk[i++].v; need("|"); return { k: "as", src: l, name: name, body: pipe() }; }
+      if (peek("|")) { i++; return { k: "pipe", l: l, r: pipe() }; }
+      return l;
+    }
+    function comma() { var l = alt(); while (peek(",")) { i++; l = { k: "comma", l: l, r: alt() }; } return l; }
+    function alt() { var l = or(); while (peek("//")) { i++; l = { k: "alt", l: l, r: or() }; } return l; }
+    function or() { var l = and(); while (idp("or")) { i++; l = { k: "or", l: l, r: and() }; } return l; }
+    function and() { var l = cmp(); while (idp("and")) { i++; l = { k: "and", l: l, r: cmp() }; } return l; }
+    function cmp() { var l = add(); if (tk[i] && tk[i].t === "op" && /^(==|!=|<=|>=|<|>)$/.test(tk[i].v)) { var o = tk[i++].v; return { k: "cmp", o: o, l: l, r: add() }; } return l; }
+    function add() { var l = mul(); while (peek("+") || peek("-")) { var o = tk[i++].v; l = { k: "arith", o: o, l: l, r: mul() }; } return l; }
+    function mul() { var l = post(); while (peek("*") || peek("/") || peek("%")) { var o = tk[i++].v; l = { k: "arith", o: o, l: l, r: post() }; } return l; }
+    function suffixes(e) {
+      for (;;) {
+        if (peek(".") && tk[i + 1] && (tk[i + 1].t === "id" || tk[i + 1].t === "str") && !(tk[i + 1].t === "id" && tk[i].sp)) { i++; var t = tk[i++]; e = { k: "idx", e: e, key: { k: "lit", v: t.t === "id" ? t.v : t.parts.join("") } }; continue; }
+        if (peek(".") && tk[i + 1] && tk[i + 1].t === "op" && tk[i + 1].v === "[") { i++; continue; }
+        if (peek("[")) {
+          i++;
+          if (peek("]")) { i++; e = { k: "iter", e: e }; continue; }
+          var a = pipe();
+          if (peek(":")) { i++; var b = peek("]") ? null : pipe(); need("]"); e = { k: "slice", e: e, a: a, b: b }; continue; }
+          need("]"); e = { k: "idx", e: e, key: a }; continue;
+        }
+        if (peek("?")) { i++; e = { k: "try", e: e }; continue; }
+        return e;
+      }
+    }
+    function post() { return suffixes(term()); }
+    function term() {
+      var t = tk[i];
+      if (!t) throw new Error("syntax error, unexpected end of file");
+      if (t.t === "num") { i++; return { k: "lit", v: t.v }; }
+      if (t.t === "str") { i++; return { k: "str", parts: t.parts.map(function (p) { return typeof p === "string" ? p : jqParse(p.expr); }) }; }
+      if (t.t === "fmt") { i++; if (tk[i] && tk[i].t === "str") { var s2 = tk[i++]; return { k: "str", parts: s2.parts.map(function (p) { return typeof p === "string" ? p : { k: "fmtapply", f: t.v, e: jqParse(p.expr) }; }) }; } return { k: "fmt", f: t.v }; }
+      if (t.t === "var") { i++; return { k: "var", name: t.v }; }
+      if (t.t === "op" && t.v === "-") { i++; return { k: "neg", e: post() }; }
+      if (t.t === "op" && t.v === "..") { i++; return { k: "recurse" }; }
+      if (t.t === "op" && t.v === ".") {
+        i++;
+        var nt = tk[i];
+        if (nt && (nt.t === "id" || nt.t === "str") && !(nt.t === "id" && /^(and|or|as)$/.test(nt.v))) { i++; return { k: "idx", e: { k: "self" }, key: { k: "lit", v: nt.t === "id" ? nt.v : nt.parts.join("") } }; }
+        return { k: "self" };
+      }
+      if (t.t === "op" && t.v === "(") { i++; var e = pipe(); need(")"); return e; }
+      if (t.t === "op" && t.v === "[") { i++; if (peek("]")) { i++; return { k: "arr", e: null }; } var ae = pipe(); need("]"); return { k: "arr", e: ae }; }
+      if (t.t === "op" && t.v === "{") {
+        i++; var fields = [];
+        while (!peek("}")) {
+          var kt = tk[i], key, val = null;
+          if (kt.t === "id" || kt.t === "var") { i++; key = { k: "lit", v: kt.v.replace(/^\$/, "") }; if (kt.t === "var") val = { k: "var", name: kt.v }; }
+          else if (kt.t === "str") { i++; key = { k: "str", parts: kt.parts.map(function (p) { return typeof p === "string" ? p : jqParse(p.expr); }) }; }
+          else if (kt.t === "op" && kt.v === "(") { i++; key = pipe(); need(")"); }
+          else throw new Error("syntax error, unexpected '" + kt.v + "' in object construction");
+          if (peek(":")) { i++; val = alt(); }
+          if (!val) val = { k: "idx", e: { k: "self" }, key: key };
+          fields.push({ key: key, val: val });
+          if (peek(",")) { i++; continue; }
+          if (!peek("}")) throw new Error("syntax error, unexpected token in object construction");
+        }
+        i++;
+        return { k: "obj", fields: fields };
+      }
+      if (t.t === "id") {
+        i++;
+        if (t.v === "true" || t.v === "false") return { k: "lit", v: t.v === "true" };
+        if (t.v === "null") return { k: "lit", v: null };
+        if (t.v === "if") { var c = pipe(); if (!idp("then")) throw new Error("syntax error, expecting then"); i++; var th = pipe(), el = null; if (idp("elif")) { tk[i].v = "if"; el = term(); return { k: "if", c: c, t: th, e: el }; } if (idp("else")) { i++; el = pipe(); } if (!idp("end")) throw new Error("syntax error, expecting end"); i++; return { k: "if", c: c, t: th, e: el }; }
+        var args = [];
+        if (peek("(")) { i++; for (;;) { args.push(pipe()); if (peek(";")) { i++; continue; } break; } need(")"); }
+        return { k: "call", f: t.v, a: args };
+      }
+      throw new Error("syntax error, unexpected '" + (t.v || "string") + "'");
+    }
+    var ast = pipe();
+    if (i < tk.length) throw new Error("syntax error, unexpected '" + (tk[i].v || "string") + "'");
+    return ast;
+  }
+  function jqType(v) { return v === null ? "null" : Array.isArray(v) ? "array" : typeof v; }
+  function jqTrue(v) { return v !== false && v !== null && v !== undefined; }
+  function jqText(v) { return typeof v === "string" ? v : JSON.stringify(v); }
+  function jqOrder(v) { return { "null": 0, "boolean": 1, "number": 2, "string": 3, "array": 4, "object": 5 }[jqType(v)]; }
+  function jqCmp(a, b) {
+    var ta = jqOrder(a), tb = jqOrder(b);
+    if (ta !== tb) return ta - tb;
+    if (typeof a === "number" || typeof a === "string" || typeof a === "boolean") return a < b ? -1 : a > b ? 1 : 0;
+    if (Array.isArray(a)) { for (var i = 0; i < Math.min(a.length, b.length); i++) { var c = jqCmp(a[i], b[i]); if (c) return c; } return a.length - b.length; }
+    if (a && typeof a === "object") { var ka = Object.keys(a).sort(), kb = Object.keys(b).sort(), kc = jqCmp(ka, kb); if (kc) return kc; for (var j = 0; j < ka.length; j++) { var d = jqCmp(a[ka[j]], b[ka[j]]); if (d) return d; } }
+    return 0;
+  }
+  function jqFmt(f, v) {
+    switch (f) {
+      case "@text": return jqText(v);
+      case "@json": return JSON.stringify(v);
+      case "@tsv": if (!Array.isArray(v)) throw new Error(jqType(v) + " (" + JSON.stringify(v) + ") cannot be tsv-formatted, only an array can be"); return v.map(function (x) { return x === null ? "" : String(typeof x === "object" ? JSON.stringify(x) : x).replace(/\\/g, "\\\\").replace(/\t/g, "\\t").replace(/\n/g, "\\n"); }).join("\t");
+      case "@csv": if (!Array.isArray(v)) throw new Error(jqType(v) + " (" + JSON.stringify(v) + ") cannot be csv-formatted, only an array can be"); return v.map(function (x) { return typeof x === "string" ? "\"" + x.replace(/"/g, "\"\"") + "\"" : x === null ? "" : String(x); }).join(",");
+      case "@base64": return M2.b64 ? M2.b64(jqText(v)) : jqText(v);
+      case "@uri": return encodeURIComponent(jqText(v));
+      case "@sh": return (Array.isArray(v) ? v : [v]).map(function (x) { return typeof x === "string" ? "'" + x.replace(/'/g, "'\\''") + "'" : String(x); }).join(" ");
+      case "@html": return jqText(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+    }
+    throw new Error(f.slice(1) + " is not a valid format");
+  }
+  function jqEval(e, v, env) {
+    function one(x, val) { return jqEval(x, val === undefined ? v : val, env); }
+    function each(x, fn) { var out = []; one(x).forEach(function (r) { out = out.concat(fn(r)); }); return out; }
+    switch (e.k) {
+      case "self": return [v];
+      case "lit": return [e.v];
+      case "var": if (!(e.name in env)) throw new Error(e.name + " is not defined"); return [env[e.name]];
+      case "recurse": var acc = []; (function rec(x) { acc.push(x); if (x && typeof x === "object") (Array.isArray(x) ? x : Object.keys(x).map(function (k) { return x[k]; })).forEach(rec); })(v); return acc;
+      case "str": var outs = [""]; e.parts.forEach(function (p) { var vals = typeof p === "string" ? [p] : p.k === "fmtapply" ? one(p.e).map(function (r) { return jqFmt(p.f, r); }) : one(p).map(jqText), nx = []; outs.forEach(function (o) { vals.forEach(function (x) { nx.push(o + x); }); }); outs = nx; }); return outs;
+      case "fmt": return [jqFmt(e.f, v)];
+      case "pipe": return each(e.l, function (r) { return jqEval(e.r, r, env); });
+      case "as": return each(e.src, function (r) { var env2 = Object.assign({}, env); env2[e.name] = r; return jqEval(e.body, v, env2); });
+      case "comma": return one(e.l).concat(one(e.r));
+      case "alt": var good = one(e.l).filter(jqTrue); return good.length ? good : one(e.r);
+      case "or": return each(e.l, function (a) { return jqTrue(a) ? [true] : one(e.r).map(jqTrue); });
+      case "and": return each(e.l, function (a) { return !jqTrue(a) ? [false] : one(e.r).map(jqTrue); });
+      case "cmp": return each(e.r, function (b) { return one(e.l).map(function (a) { var c = jqCmp(a, b); return { "==": c === 0, "!=": c !== 0, "<": c < 0, ">": c > 0, "<=": c <= 0, ">=": c >= 0 }[e.o]; }); });
+      case "neg": return one(e.e).map(function (x) { if (typeof x !== "number") throw new Error(jqType(x) + " (" + JSON.stringify(x) + ") cannot be negated"); return -x; });
+      case "arith": return each(e.r, function (b) { return one(e.l).map(function (a) {
+        if (e.o === "+") { if (a === null) return b; if (b === null) return a; if (typeof a === "number" && typeof b === "number") return a + b; if (typeof a === "string" && typeof b === "string") return a + b; if (Array.isArray(a) && Array.isArray(b)) return a.concat(b); if (jqType(a) === "object" && jqType(b) === "object") return Object.assign({}, a, b); }
+        else if (e.o === "-") { if (typeof a === "number" && typeof b === "number") return a - b; if (Array.isArray(a) && Array.isArray(b)) return a.filter(function (x) { return !b.some(function (y) { return jqCmp(x, y) === 0; }); }); }
+        else if (typeof a === "number" && typeof b === "number") { if (e.o === "*") return a * b; if (e.o === "/") { if (b === 0) throw new Error("number (" + a + ") and number (0) cannot be divided because the divisor is zero"); return a / b; } return a % b; }
+        else if (e.o === "/" && typeof a === "string" && typeof b === "string") return a.split(b);
+        throw new Error(jqType(a) + " (" + JSON.stringify(a) + ") and " + jqType(b) + " (" + JSON.stringify(b) + ") cannot be " + { "+": "added", "-": "subtracted", "*": "multiplied", "/": "divided", "%": "divided" }[e.o]);
+      }); });
+      case "idx": return each(e.e, function (x) { return one(e.key).map(function (k) {
+        if (x === null) return null;
+        if (typeof k === "number") { if (!Array.isArray(x)) throw new Error("Cannot index " + jqType(x) + " with number"); var n = k < 0 ? x.length + k : k; return x[n] === undefined ? null : x[n]; }
+        if (jqType(x) !== "object") throw new Error("Cannot index " + jqType(x) + " with \"" + k + "\"");
+        return x[k] === undefined ? null : x[k];
+      }); });
+      case "iter": return each(e.e, function (x) { if (x === null) throw new Error("Cannot iterate over null"); if (typeof x !== "object") throw new Error("Cannot iterate over " + jqType(x) + (typeof x === "string" ? " (\"" + x + "\")" : "")); return Array.isArray(x) ? x : Object.keys(x).map(function (k) { return x[k]; }); });
+      case "slice": return each(e.e, function (x) { var a = e.a ? one(e.a)[0] : 0, b = e.b ? one(e.b)[0] : undefined; if (x === null) return [null]; return [x.slice(a === null ? 0 : a, b === null ? undefined : b)]; });
+      case "try": try { return one(e.e); } catch (er) { return []; }
+      case "arr": return [e.e ? one(e.e) : []];
+      case "obj": var objs = [{}]; e.fields.forEach(function (f) { var nx = []; objs.forEach(function (o) { one(f.key).forEach(function (k) { if (typeof k !== "string") throw new Error("Object keys must be strings"); one(f.val).forEach(function (val) { var c = Object.assign({}, o); c[k] = val; nx.push(c); }); }); }); objs = nx; }); return objs;
+      case "if": return each(e.c, function (c) { return jqTrue(c) ? one(e.t) : e.e ? one(e.e) : [v]; });
+      case "call": return jqCall(e, v, env);
+    }
+    throw new Error("unsupported filter");
+  }
+  function jqCall(e, v, env) {
+    var a = e.a, f = e.f;
+    function arg(n, val) { return jqEval(a[n], val === undefined ? v : val, env); }
+    function arr() { if (!Array.isArray(v)) throw new Error("Cannot iterate over " + jqType(v)); return v; }
+    switch (f + "/" + a.length) {
+      case "empty/0": return [];
+      case "not/0": return [!jqTrue(v)];
+      case "length/0": return [v === null ? 0 : typeof v === "string" || Array.isArray(v) ? v.length : typeof v === "object" ? Object.keys(v).length : typeof v === "number" ? Math.abs(v) : (function () { throw new Error("boolean (" + v + ") has no length"); })()];
+      case "keys/0": case "keys_unsorted/0": if (v === null || typeof v !== "object") throw new Error(jqType(v) + " (" + JSON.stringify(v) + ") has no keys"); return [Array.isArray(v) ? v.map(function (x, i) { return i; }) : f === "keys" ? Object.keys(v).sort() : Object.keys(v)];
+      case "values/0": return v === null ? [] : [v];
+      case "has/1": return arg(0).map(function (k) { return Array.isArray(v) ? k >= 0 && k < v.length : Object.prototype.hasOwnProperty.call(v || {}, k); });
+      case "select/1": return arg(0).some(jqTrue) ? [v] : [];
+      case "map/1": return [[].concat.apply([], arr().map(function (x) { return arg(0, x); }))];
+      case "map_values/1": var mv = Array.isArray(v) ? [] : {}; Object.keys(v).forEach(function (k) { var r = arg(0, v[k]); if (r.length) mv[k] = r[0]; }); return [Array.isArray(v) ? Object.keys(mv).map(function (k) { return mv[k]; }) : mv];
+      case "add/0": return [arr().reduce(function (s, x) { return s === null ? x : x === null ? s : typeof s === "number" ? s + x : typeof s === "string" ? s + x : Array.isArray(s) ? s.concat(x) : Object.assign({}, s, x); }, null)];
+      case "any/0": return [arr().some(jqTrue)];
+      case "all/0": return [arr().every(jqTrue)];
+      case "any/1": return [arr().some(function (x) { return arg(0, x).some(jqTrue); })];
+      case "all/1": return [arr().every(function (x) { return arg(0, x).every(jqTrue); })];
+      case "first/0": return [arr()[0] === undefined ? null : v[0]];
+      case "last/0": return [arr()[v.length - 1] === undefined ? null : v[v.length - 1]];
+      case "first/1": var fr = arg(0); return fr.length ? [fr[0]] : [];
+      case "last/1": var lr = arg(0); return lr.length ? [lr[lr.length - 1]] : [];
+      case "reverse/0": return [typeof v === "string" ? v.split("").reverse().join("") : arr().slice().reverse()];
+      case "sort/0": return [arr().slice().sort(jqCmp)];
+      case "sort_by/1": return [arr().map(function (x) { return { x: x, k: arg(0, x) }; }).sort(function (p, q) { return jqCmp(p.k, q.k); }).map(function (p) { return p.x; })];
+      case "group_by/1": var g = []; arr().map(function (x) { return { x: x, k: arg(0, x) }; }).sort(function (p, q) { return jqCmp(p.k, q.k); }).forEach(function (p) { var last = g[g.length - 1]; if (last && jqCmp(last.k, p.k) === 0) last.items.push(p.x); else g.push({ k: p.k, items: [p.x] }); }); return [g.map(function (z) { return z.items; })];
+      case "unique/0": return [arr().slice().sort(jqCmp).filter(function (x, i, s) { return i === 0 || jqCmp(s[i - 1], x) !== 0; })];
+      case "unique_by/1": var ub = [], seenK = []; arr().forEach(function (x) { var k = arg(0, x); if (!seenK.some(function (s) { return jqCmp(s, k) === 0; })) { seenK.push(k); ub.push(x); } }); return [ub];
+      case "min/0": return [arr().length ? v.slice().sort(jqCmp)[0] : null];
+      case "max/0": return [arr().length ? v.slice().sort(jqCmp)[v.length - 1] : null];
+      case "min_by/1": case "max_by/1": if (!arr().length) return [null]; var sb = v.map(function (x) { return { x: x, k: arg(0, x) }; }).sort(function (p, q) { return jqCmp(p.k, q.k); }); return [f === "min_by" ? sb[0].x : sb[sb.length - 1].x];
+      case "join/1": return arg(0).map(function (sep) { return arr().map(function (x) { return x === null ? "" : typeof x === "object" ? (function () { throw new Error("Cannot join with " + jqType(x)); })() : String(x); }).join(sep); });
+      case "split/1": return arg(0).map(function (sep) { return String(v).split(sep); });
+      case "ascii_downcase/0": return [String(v).toLowerCase()];
+      case "ascii_upcase/0": return [String(v).toUpperCase()];
+      case "ltrimstr/1": return arg(0).map(function (p) { return typeof v === "string" && v.indexOf(p) === 0 ? v.slice(p.length) : v; });
+      case "rtrimstr/1": return arg(0).map(function (p) { return typeof v === "string" && p && v.slice(-p.length) === p ? v.slice(0, -p.length) : v; });
+      case "startswith/1": return arg(0).map(function (p) { return String(v).indexOf(p) === 0; });
+      case "endswith/1": return arg(0).map(function (p) { return String(v).slice(-String(p).length) === String(p); });
+      case "test/1": case "test/2": return arg(0).map(function (re) { return new RegExp(re, a[1] ? String(arg(1)[0]).replace(/[^gimsuy]/g, "").replace("g", "") : "").test(String(v)); });
+      case "contains/1": return arg(0).map(function (b) { return (function has(x, y) { if (typeof x === "string") return typeof y === "string" && x.indexOf(y) >= 0; if (Array.isArray(x)) return Array.isArray(y) && y.every(function (yy) { return x.some(function (xx) { return has(xx, yy); }); }); if (x && typeof x === "object") return y && typeof y === "object" && Object.keys(y).every(function (k) { return k in x && has(x[k], y[k]); }); return x === y; })(v, b); });
+      case "index/1": return arg(0).map(function (s) { var n = String(v).indexOf(s); return n < 0 ? null : n; });
+      case "tostring/0": return [jqText(v)];
+      case "tonumber/0": var nn = Number(v); if (isNaN(nn)) throw new Error("Cannot parse '" + v + "' as JSON"); return [nn];
+      case "type/0": return [jqType(v)];
+      case "to_entries/0": return [Object.keys(v).map(function (k) { return { key: k, value: v[k] }; })];
+      case "from_entries/0": var fe = {}; arr().forEach(function (x) { fe[x.key !== undefined ? x.key : x.name !== undefined ? x.name : x.k] = x.value !== undefined ? x.value : x.v; }); return [fe];
+      case "with_entries/1": var we = {}; [].concat.apply([], Object.keys(v).map(function (k) { return arg(0, { key: k, value: v[k] }); })).forEach(function (x) { we[x.key] = x.value; }); return [we];
+      case "range/1": var ra = []; for (var ri = 0; ri < arg(0)[0]; ri++) ra.push(ri); return ra;
+      case "floor/0": return [Math.floor(v)];
+      case "sqrt/0": return [Math.sqrt(v)];
+      case "tojson/0": return [JSON.stringify(v)];
+      case "fromjson/0": return [JSON.parse(v)];
+      case "ascii/0": return [String.fromCharCode(v)];
+      case "limit/2": return arg(1).slice(0, arg(0)[0]);
+      case "env/0": return [{}];
+      case "input/0": case "inputs/0": return [];
+      case "error/0": case "error/1": throw new Error(a.length ? jqText(arg(0)[0]) : jqText(v));
+      case "splits/1": return arg(0).length ? String(v).split(new RegExp(arg(0)[0])) : [];
+      case "sub/2": case "gsub/2": return [String(v).replace(new RegExp(arg(0)[0], f === "gsub" ? "g" : ""), arg(1)[0])];
+    }
+    throw new Error(f + "/" + a.length + " is not defined");
+  }
+  function jqRun(filter, val) { return jqEval(jqParse(filter), val, {}); }
+  M2.jqRun = jqRun;
   CMDS.jq = function (args, io, sess) {
     var a = args.slice(1), raw = false, compact = false, filter = null, files = [];
     a.forEach(function (x) { if (x === "-r" || x === "--raw-output") raw = true; else if (x === "-c" || x === "--compact-output") compact = true; else if (/^-[rc]+$/.test(x)) { raw = x.indexOf("r") >= 0; compact = x.indexOf("c") >= 0; } else if (filter === null) filter = x; else files.push(x); });

@@ -838,6 +838,7 @@
       return fmtPlaceholder(c, sha, co, f, dec, dm).split("\n").map(function (t, i) { return { t: t, first: i === 0 }; });
     }
     L.push({ t: "commit " + ab + decoText(dec, sha), c: "yellow", first: true });
+    if (opts.showSig && root.GitSign) root.GitSign.logLines(c, sha, co).forEach(function (t) { L.push({ t: t }); });
     if (co.parents.length > 1) L.push({ t: "Merge: " + co.parents.map(short).join(" ") });
     if (fmtName === "full" || fmtName === "fuller") {
       L.push({ t: (fmtName === "fuller" ? "Author:     " : "Author: ") + co.author.name + " <" + co.author.email + ">" });
@@ -881,7 +882,7 @@
     var ps = firstParentOnly ? co.parents.slice(0, 1) : co.parents;
     return ps.every(function (p) { return rel(G.commitFlat(c.sys, p)) !== mine; });
   }
-  var LOGSPEC = ["oneline", "graph", "all", "decorate=?", "no-decorate", "n|max-count=", "skip=", "p|patch", "u", "stat=?", "shortstat", "name-only", "name-status", "numstat", "author=+", "committer=", "grep=+", "i|regexp-ignore-case", "S=", "G=", "since=", "after=", "until=", "before=", "reverse", "format=", "pretty=?", "abbrev-commit", "no-abbrev-commit", "date=", "first-parent", "no-merges", "merges", "follow", "topo-order", "date-order", "full-diff", "U|unified=", "color=?", "no-color", "summary", "relative-date", "source", "left-right", "branches=?", "tags=?", "remotes=?", "simplify-by-decoration", "invert-grep", "all-match", "E|extended-regexp", "F|fixed-strings", "L=", "no-walk", "m", "c", "cc", "walk-reflogs", "g", "z"];
+  var LOGSPEC = ["show-signature", "oneline", "graph", "all", "decorate=?", "no-decorate", "n|max-count=", "skip=", "p|patch", "u", "stat=?", "shortstat", "name-only", "name-status", "numstat", "author=+", "committer=", "grep=+", "i|regexp-ignore-case", "S=", "G=", "since=", "after=", "until=", "before=", "reverse", "format=", "pretty=?", "abbrev-commit", "no-abbrev-commit", "date=", "first-parent", "no-merges", "merges", "follow", "topo-order", "date-order", "full-diff", "U|unified=", "color=?", "no-color", "summary", "relative-date", "source", "left-right", "branches=?", "tags=?", "remotes=?", "simplify-by-decoration", "invert-grep", "all-match", "E|extended-regexp", "F|fixed-strings", "L=", "no-walk", "m", "c", "cc", "walk-reflogs", "g", "z"];
   function cmdLog(c, args, mode) {
     needRepo(c);
     var p = parseOpts(c, args, LOGSPEC, "git log [<options>] [<revision-range>] [[--] <path>...]");
@@ -957,7 +958,7 @@
     if (o["no-abbrev-commit"]) abbrevCommit = false;
     var dec = (o.decorate !== undefined && o.decorate !== "no") || (c.io.tty && o.decorate === undefined && !o["no-decorate"]) ? decorations(c) : null;
     if (o["no-decorate"] || o.decorate === "no") dec = null;
-    var dopts = { date: o["relative-date"] ? "relative" : o.date, abbrevCommit: abbrevCommit, userFormat: userFormat };
+    var dopts = { date: o["relative-date"] ? "relative" : o.date, abbrevCommit: abbrevCommit, userFormat: userFormat, showSig: !!o["show-signature"] };
     var showPatch = o.patch || o.u || o.p, showStat = o.stat !== undefined, dmode = diffOpts(p);
     var graph = o.graph ? makeGraph() : null;
     var shownSet = {}; list.forEach(function (s) { shownSet[s] = 1; });
@@ -1029,7 +1030,7 @@
       var fmtName = o.oneline ? "oneline" : "medium", userFormat = null;
       var pf = o.format !== undefined ? o.format : o.pretty;
       if (pf !== undefined && pf !== true) { if (/^(oneline|short|medium|full|fuller)$/.test(pf)) fmtName = pf; else { fmtName = "format"; userFormat = pf.replace(/^t?format:/, ""); } }
-      prettyLines(c, sha, co, fmtName, { date: o.date, abbrevCommit: o.oneline || o["abbrev-commit"], userFormat: userFormat }, dec).forEach(function (l) { c.o.line(l.t, l.c); });
+      prettyLines(c, sha, co, fmtName, { date: o.date, abbrevCommit: o.oneline || o["abbrev-commit"], userFormat: userFormat, showSig: !!o["show-signature"] }, dec).forEach(function (l) { c.o.line(l.t, l.c); });
       if (o["no-patch"] || o.s) return;
       if (co.parents.length > 1) return;
       var rp = p.paths ? matcher(c, p.paths) : null;
@@ -1736,6 +1737,7 @@
     var committer = ident(c, "committer");
     var tree = G.writeTree(c.sys, mr.entries);
     var co = { type: "commit", tree: tree, parents: [ours, theirs], author: ident(c, "author"), committer: committer, message: cleanupMessage(msg) };
+    if (root.GitSign) root.GitSign.maybe(c, co);
     var sha = G.putObject(c.sys, co);
     if (h.detached) G.setHead(repo, sha, "merge " + name + ": Merge made by the 'ort' strategy.", committer);
     else G.updateRef(repo, h.ref, sha, "merge " + name + ": Merge made by the 'ort' strategy.", committer);
@@ -1842,6 +1844,7 @@
     var idx = G.readIndex(repo);
     var co = { type: "commit", tree: G.writeTree(c.sys, idx.entries), parents: [h.sha], author: author ? Object.assign({}, author) : ident(c, "author"), committer: committer, message: cleanupMessage(msg) };
     if (signoff) co.message = co.message.replace(/\n$/, "") + "\n\nSigned-off-by: " + committer.name + " <" + committer.email + ">\n";
+    if (root.GitSign) root.GitSign.maybe(c, co);
     var sha = G.putObject(c.sys, co);
     var rl = (kind === "revert" ? "revert: " : "cherry-pick: ") + subject(co.message);
     if (h.detached) G.setHead(repo, sha, rl, committer); else G.updateRef(repo, h.ref, sha, rl, committer);

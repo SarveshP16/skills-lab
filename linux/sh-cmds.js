@@ -133,6 +133,9 @@
       }
       if (!ere && /[(){}+?|]/.test(c)) { out += "\\" + c; i++; continue; }
       if (!ere && c === "*" && (out === "" || out === "^")) { out += "\\*"; i++; continue; }
+      // in a BRE, ^ and $ are anchors only at the start / end of the pattern (or of a \( \) group)
+      if (!ere && c === "^" && i > 0 && !(/[(|]$/.test(out) && !/\\[(|]$/.test(out))) { out += "\\^"; i++; continue; }
+      if (!ere && c === "$" && i < src.length - 1 && src.slice(i + 1, i + 3) !== "\\)" && src.slice(i + 1, i + 3) !== "\\|") { out += "\\$"; i++; continue; }
       out += c; i++;
     }
     return out;
