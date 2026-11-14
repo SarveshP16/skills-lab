@@ -188,7 +188,7 @@
     var chain = [], cur = name, guard = 0;
     while (guard++ < 8) {
       var rec = zone[cur];
-      if (!rec || (rec.internal && external)) return { status: chain.length ? "NOERROR" : "NXDOMAIN", chain: chain, answers: [] };
+      if (!rec || (rec.internal && external)) return { status: chain.length && !(!rec && sys.danglingNx !== false) ? "NOERROR" : "NXDOMAIN", chain: chain, answers: [] };   // a CNAME to a name that doesn't exist is NXDOMAIN
       if (rec.CNAME && type !== "CNAME") { chain.push({ name: cur, type: "CNAME", data: rec.CNAME }); cur = rec.CNAME.replace(/\.$/, ""); continue; }
       var ans = (rec[type] || []).map(function (d) { return { name: cur, type: type, data: type === "CNAME" ? rec.CNAME : d }; });
       if (type === "CNAME" && rec.CNAME) ans = [{ name: cur, type: "CNAME", data: rec.CNAME }];
@@ -245,11 +245,12 @@
       putRoot(ms, "/etc/hostname", info.machine + "\n");
       putRoot(ms, "/etc/hosts", "127.0.0.1 localhost\n127.0.1.1 " + info.machine + "\n" + spec.ip + " " + info.machine + ".kestrel.internal " + info.machine + "\n10.20.0.15 kc-web-01.kestrel.internal kc-web-01\n\n# The following lines are desirable for IPv6 capable hosts\n::1     ip6-localhost ip6-loopback\n");
       spec.setup(ms);
-      var hook = (sys.remoteSetup || {})[info.machine]; if (hook) hook(ms);
+      var hook = (sys.remoteSetup || (sys.topSession && sys.topSession.sys && sys.topSession.sys.remoteSetup) || {})[info.machine]; if (hook) hook(ms);
     } });
     net.byIp[ip] = m;
     return m;
   }
+  M2.MACHINES = MACHINES;
   M2.machine = function (sys, host) { var ip = resolve(sys, host) || host; return machineByIp(sys, ip); };
   function reach(sys, ip) {
     if (isSelf(sys, ip)) return { self: true, rtt: 0.035 };
@@ -485,7 +486,7 @@
   };
 
   /* ================================================================== nginx: config parser, -t, serving */
-  var NGX_ARGS = { user: [1, 2], worker_processes: [1, 1], pid: [1, 1], error_log: [1, 2], include: [1, 1], worker_connections: [1, 1], multi_accept: [1, 1], sendfile: [1, 1], tcp_nopush: [1, 1], tcp_nodelay: [1, 1], types_hash_max_size: [1, 1], server_tokens: [1, 1], default_type: [1, 1], ssl_protocols: [1, 9], ssl_prefer_server_ciphers: [1, 1], ssl_ciphers: [1, 1], ssl_certificate: [1, 1], ssl_certificate_key: [1, 1], access_log: [1, 4], gzip: [1, 1], gzip_types: [1, 20], gzip_vary: [1, 1], gzip_proxied: [1, 9], gzip_comp_level: [1, 1], listen: [1, 9], server_name: [1, 20], root: [1, 1], alias: [1, 1], index: [1, 9], try_files: [2, 9], return: [1, 2], proxy_pass: [1, 1], proxy_set_header: [2, 2], proxy_http_version: [1, 1], proxy_read_timeout: [1, 1], add_header: [2, 3], autoindex: [1, 1], deny: [1, 1], allow: [1, 1], client_max_body_size: [1, 1], keepalive_timeout: [1, 2], charset: [1, 1], expires: [1, 2], rewrite: [2, 3], error_page: [2, 9], limit_req_zone: [3, 4], limit_req: [1, 3], types: [0, 0], events: [0, 0], http: [0, 0], server: [0, 0], location: [1, 2], if: [1, 9], fastcgi_pass: [1, 1], fastcgi_param: [2, 3], log_format: [2, 20], resolver: [1, 9], set: [2, 2], http2: [1, 1], ssl_session_cache: [1, 2], ssl_session_timeout: [1, 1], include_snippet: [1, 1], large_client_header_buffers: [2, 2], server_names_hash_bucket_size: [1, 1], open_file_cache: [1, 2], auth_basic: [1, 1], auth_basic_user_file: [1, 1], stub_status: [0, 1] };
+  var NGX_ARGS = { user: [1, 2], worker_processes: [1, 1], pid: [1, 1], error_log: [1, 2], include: [1, 1], worker_connections: [1, 1], multi_accept: [1, 1], sendfile: [1, 1], tcp_nopush: [1, 1], tcp_nodelay: [1, 1], types_hash_max_size: [1, 1], server_tokens: [1, 1], default_type: [1, 1], ssl_protocols: [1, 9], ssl_prefer_server_ciphers: [1, 1], ssl_ciphers: [1, 1], ssl_certificate: [1, 1], ssl_certificate_key: [1, 1], access_log: [1, 4], gzip: [1, 1], gzip_types: [1, 20], gzip_vary: [1, 1], gzip_proxied: [1, 9], gzip_comp_level: [1, 1], listen: [1, 9], server_name: [1, 20], root: [1, 1], alias: [1, 1], index: [1, 9], try_files: [2, 9], return: [1, 2], proxy_pass: [1, 1], proxy_set_header: [2, 2], proxy_http_version: [1, 1], proxy_read_timeout: [1, 1], add_header: [2, 3], autoindex: [1, 1], deny: [1, 1], allow: [1, 1], client_max_body_size: [1, 1], keepalive_timeout: [1, 2], charset: [1, 1], expires: [1, 2], rewrite: [2, 3], error_page: [2, 9], limit_req_zone: [3, 4], limit_req: [1, 3], limit_req_status: [1, 1], types: [0, 0], events: [0, 0], http: [0, 0], server: [0, 0], location: [1, 2], if: [1, 9], fastcgi_pass: [1, 1], fastcgi_param: [2, 3], log_format: [2, 20], resolver: [1, 9], set: [2, 2], http2: [1, 1], ssl_session_cache: [1, 2], ssl_session_timeout: [1, 1], include_snippet: [1, 1], large_client_header_buffers: [2, 2], server_names_hash_bucket_size: [1, 1], open_file_cache: [1, 2], auth_basic: [1, 1], auth_basic_user_file: [1, 1], stub_status: [0, 1] };
   var NGX_BLOCK = { events: true, http: true, server: true, location: true, types: true, if: true, upstream: true, map: true };
   function ngxTokenize(text, file) {
     var toks = [], i = 0, line = 1;
@@ -697,7 +698,7 @@
   /* ---------------- HTTP: servers answering on kc-web-01 */
   var MIME = { html: "text/html", htm: "text/html", css: "text/css", js: "application/javascript", json: "application/json", png: "image/png", jpg: "image/jpeg", svg: "image/svg+xml", txt: "text/plain", ico: "image/x-icon", xml: "text/xml" };
   function httpDate(ms) { var d = new Date(ms); return WDAY[d.getUTCDay()] + ", " + pad(d.getUTCDate(), 2, "0") + " " + MON[d.getUTCMonth()] + " " + d.getUTCFullYear() + " " + tod(ms) + " GMT"; }
-  var REASON = { 200: "OK", 201: "Created", 204: "No Content", 301: "Moved Permanently", 302: "Found", 304: "Not Modified", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 413: "Request Entity Too Large", 500: "Internal Server Error", 502: "Bad Gateway", 503: "Service Temporarily Unavailable", 504: "Gateway Time-out" };
+  var REASON = { 200: "OK", 201: "Created", 204: "No Content", 301: "Moved Permanently", 302: "Found", 304: "Not Modified", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 413: "Request Entity Too Large", 429: "Too Many Requests", 500: "Internal Server Error", 502: "Bad Gateway", 503: "Service Temporarily Unavailable", 504: "Gateway Time-out" };
   function ngxErrPage(code, conf) { var t = code + " " + REASON[code]; return "<html>\n<head><title>" + t + "</title></head>\n<body>\n<center><h1>" + t + "</h1></center>\n<hr><center>" + (conf && conf.tokensOff ? "nginx" : "nginx/1.24.0 (Ubuntu)") + "</center>\n</body>\n</html>\n"; }
   function wwwSess(sys, user) { var u = S.userByName(sys, user || "www-data") || { uid: 33, gid: 33, name: "www-data" }; return { sys: sys, uid: u.uid, gid: u.gid, groups: [u.gid].concat(S.supplementary(sys, u.name)), cwd: "/", user: u.name, umask: 18, vars: {} }; }
   function serveNginx(sys, conf, req, client) {
@@ -739,6 +740,16 @@
     }
     function fail(code, level, msg) { res.status = code; res.body = ngxErrPage(code, conf); if (msg) errLog(level || "error", msg); return finish(); }
     var deny = get("deny"); if (deny && deny.args[0] === "all") return fail(403, "error", "access forbidden by rule");
+    var lr = loc && first(loc.d, "limit_req") || first(srv.d, "limit_req");
+    if (lr) {
+      var zname = ((/zone=(\S+)/.exec(lr.args.join(" ")) || [])[1] || ""), burst = +((/burst=(\d+)/.exec(lr.args.join(" ")) || [])[1] || 0);
+      var zd = conf.http.block.filter(function (d) { return d.name === "limit_req_zone" && d.args.join(" ").indexOf("zone=" + zname + ":") >= 0; })[0];
+      if (zd) {
+        var rate = +((/rate=(\d+)r\/s/.exec(zd.args.join(" ")) || [])[1] || 1);
+        sys.ngxRate = sys.ngxRate || {}; var key = zname + "|" + client; sys.ngxRate[key] = (sys.ngxRate[key] || 0) + 1;
+        if (sys.ngxRate[key] > rate + burst) { var st = get("limit_req_status"), code = st ? +st.args[0] : 503; errLog("error", "limiting requests, excess: " + (sys.ngxRate[key] - rate - 1) + ".000 by zone \"" + zname + "\""); res.status = code; res.body = ngxErrPage(code, conf); return finish(); }
+      }
+    }
     var ret = get("return");
     if (ret && (loc ? first(loc.d, "return") || first(srv.d, "return") : first(srv.d, "return"))) {
       var code = +ret.args[0], val = ret.args[1];
@@ -1171,7 +1182,7 @@
     var ids = identities(sess, io, o);
     if (o.verbose) errl(io, "debug1: Authentications that can continue: " + methods.join(","));
     var hit = null;
-    if (allowed && methods.indexOf("publickey") >= 0 && !ak.bad) ids.some(function (id) { if (o.verbose) errl(io, "debug1: Offering public key: " + id.path + " " + id.pub.type.toUpperCase() + " " + fingerprint(id.pub.blob)); if (ak.keys.indexOf(id.pub.blob) >= 0) { hit = id; return true; } return false; });
+    if (allowed && methods.indexOf("publickey") >= 0 && !ak.bad && !/^no$/i.test(o.pubkeyauthentication || "")) ids.some(function (id) { if (o.verbose) errl(io, "debug1: Offering public key: " + id.path + " " + id.pub.type.toUpperCase() + " " + fingerprint(id.pub.blob)); if (ak.keys.indexOf(id.pub.blob) >= 0) { hit = id; return true; } return false; });
     var rlog = function (t) { writeRoot(m, "/var/log/auth.log", "2026-11-11T" + tod(sys.now) + ".000000+00:00 " + m.host + " sshd[" + (m.nextPid++) + "]: " + t + "\n", true); };
     var srcPort = 40000 + (hash(target + (sys.sshSeq = (sys.sshSeq || 0) + 1)) % 20000);
     if (ak.bad && allowed && ids.length) rlog("Authentication refused: bad ownership or modes for " + (/authorized_keys$/.test(ak.bad) ? "file " : "directory ") + ak.bad);

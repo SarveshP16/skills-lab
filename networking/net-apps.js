@@ -26,6 +26,8 @@
     var n = String(name).toLowerCase().replace(/\.$/, "");
     if (/^127\.0\.0\.5[34]$/.test(server)) {
       if (!resolvedUp(sys)) return { err: "refused", server: server };
+      var spz = sys.nw.poison && sys.nw.poison["127.0.0.53"] && sys.nw.poison["127.0.0.53"][n + "|" + type];
+      if (spz) return { status: "NOERROR", answers: [{ name: n, type: type, data: spz.data, ttl: spz.ttl }], chain: [], server: server, via: upstreams(sys)[0], aa: false, poisoned: true, cached: true };
       var ups = upstreams(sys), tried = [];
       for (var i = 0; i < ups.length; i++) {
         var a = askServer(sys, ups[i], n, type, { quiet: true });
@@ -39,6 +41,8 @@
     var isRes = W.RESOLVERS.indexOf(server) >= 0, zone = AUTH[server];
     if (!isRes && !zone) return { err: "refused", server: server, path: r.path };
     if (zone && !(n === zone || n.slice(-zone.length - 1) === "." + zone)) return { status: "REFUSED", answers: [], chain: [], server: server, path: r.path };
+    var pz = sys.nw.poison && sys.nw.poison[server] && sys.nw.poison[server][n + "|" + type];
+    if (pz) return { status: "NOERROR", answers: [{ name: n, type: type, data: pz.data, ttl: pz.ttl }], chain: [], server: server, aa: false, path: r.path, rtt: r.rtt, poisoned: true };
     var internal = server === "10.20.0.2";
     var res = M2.dnsLookup(sys, n, type, internal ? "10.20.0.2" : "1.1.1.1");
     return { status: res.status, answers: res.answers, chain: res.chain, server: server, aa: !!zone, path: r.path, rtt: r.rtt };
@@ -84,7 +88,7 @@
   /* ---------------- dig */
   var DIGV = "DiG 9.18.28-0ubuntu0.24.04.1-Ubuntu";
   function dnsDate(sys) { var d = new Date(sys.now); return WDAY[d.getUTCDay()] + " " + MON[d.getUTCMonth()] + " " + d.getUTCDate() + " " + tod(sys.now) + " UTC " + d.getUTCFullYear(); }
-  function rr(sys, x) { return x.name.replace(/\.?$/, ".") + "\t" + N.ttlOf(sys, x.name, x.type) + "\tIN\t" + x.type + "\t" + x.data; }
+  function rr(sys, x) { return x.name.replace(/\.?$/, ".") + "\t" + (x.ttl || N.ttlOf(sys, x.name, x.type)) + "\tIN\t" + x.type + "\t" + x.data; }
   function soaFor(name) { var parts = String(name).replace(/\.$/, "").split("."); var zone = /kestrel\.example\.com$/.test(name) ? "kestrel.example.com" : /\.internal$/.test(name) ? "kestrel.internal" : parts.slice(-2).join("."); return zone + ".\t\t900\tIN\tSOA\t" + (zone === "kestrel.example.com" ? "ns1.example-dns.net. hostmaster.kestrel.example.com. 2026111101 7200 3600 1209600 300" : zone === "kestrel.internal" ? "kc-dns-01.kestrel.internal. hostmaster.kestrel.internal. 2026111001 3600 600 604800 3600" : "ns.icann.org. noc.dns.icann.org. 2026110501 7200 3600 1209600 3600"); }
   CMDS.dig = function (args, io, sess) {
     var sys = sess.sys, a = args.slice(1), type = null, name = null, server = null, o = { cmd: true, question: true, answer: true, authority: true, additional: true, stats: true, comments: true }, short = false, trace = false, tcp = false, rev = false;
@@ -264,7 +268,7 @@
       nw.linkDns[args[2]] = { servers: args.slice(3), search: (nw.linkDns[args[2]] || { search: [] }).search };
       return 0;
     }
-    if (sub === "flush-caches") { if (sess.uid !== 0) { errl(io, "Failed to flush caches: Access denied"); return 1; } return 0; }
+    if (sub === "flush-caches") { if (sess.uid !== 0) { errl(io, "Failed to flush caches: Access denied"); return 1; } if (sys.nw.poison) delete sys.nw.poison["127.0.0.53"]; sys.nw.cacheFlushed = (sys.nw.cacheFlushed || 0) + 1; return 0; }
     if (sub === "query") {
       var nm = args[2]; if (!nm) { errl(io, "resolvectl: query requires an argument"); return 1; }
       var t0 = Date.now ? 0 : 0;
@@ -332,8 +336,22 @@
   }
   N.tlsSnap = tlsSnap;
   // TLS handshake with ip:port, sending SNI. Returns {ok, err: refused|timeout|notls, chain, alpn, version, cipher, served}
-  function tlsConnect(sys, ip, port, sni) {
+  var TLS_ORDER = ["TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1"], TLS_CIPHER = { "TLSv1.3": "TLS_AES_256_GCM_SHA384", "TLSv1.2": "ECDHE-RSA-AES256-GCM-SHA384", "TLSv1.1": "ECDHE-RSA-AES256-SHA", "TLSv1": "ECDHE-RSA-AES256-SHA" };
+  function tlsRank(v) { return { "TLSv1": 0, "TLSv1.0": 0, "TLSv1.1": 1, "TLSv1.2": 2, "TLSv1.3": 3 }[v]; }
+  // pick a version both sides allow; Ubuntu's OpenSSL (security level 2) refuses anything below TLS 1.2 unless told otherwise
+  function tlsPick(serverProtos, want, res) {
+    want = want || {};
+    var client = TLS_ORDER.filter(function (v) { var k = tlsRank(v); if (want.only) return k === tlsRank(want.only); return (want.min == null || k >= tlsRank(want.min)) && (want.max == null || k <= tlsRank(want.max)); });
+    if (!want.seclevel0) client = client.filter(function (v) { return tlsRank(v) >= 2; });
+    if (!client.length) return { err: "noproto" };
+    var v = client.filter(function (x) { return serverProtos.indexOf(x) >= 0; })[0];
+    if (!v) return { err: "protocol" };
+    res.version = v; res.cipher = TLS_CIPHER[v]; return res;
+  }
+  N.tlsPick = tlsPick;
+  function tlsConnect(sys, ip, port, sni, want) {
     if (selfTarget(sys, ip)) {
+      if (N.preTcp) { var pt0 = N.preTcp(sys, ip, port, "tcp"); if (pt0) return pt0; }
       var local = /^127\./.test(ip) ? ip : "10.20.0.15";
       var c = M2.tcpConnect(sys, local, port);
       if (c.refused) return { err: "refused" };
@@ -347,7 +365,9 @@
       var files = tlsSnap(sys) || {};
       var chain = parsePems(files[cp] || "");
       var h2 = srv.d.some(function (dd) { return dd.name === "http2" && dd.args[0] === "on"; }) || srv.listens.some(function (l) { return l.http2; });
-      return { ok: true, chain: chain, alpn: h2 ? "h2" : "http/1.1", version: "TLSv1.3", cipher: "TLS_AES_256_GCM_SHA384", server: srv.names[0], certPath: cp };
+      var spd = srv.d.filter(function (dd) { return dd.name === "ssl_protocols"; })[0] || ((live.http && live.http.block) || []).filter(function (dd) { return dd.name === "ssl_protocols"; })[0];
+      var protos = spd ? spd.args.map(function (x) { return x === "TLSv1.0" ? "TLSv1" : x; }) : ["TLSv1.2", "TLSv1.3"];
+      return tlsPick(protos, want, { ok: true, chain: chain, alpn: h2 ? "h2" : "http/1.1", version: "TLSv1.3", cipher: "TLS_AES_256_GCM_SHA384", server: srv.names[0], certPath: cp, protocols: protos });
     }
     if (isV6(ip) && W.V6HOSTS[v6norm(ip)]) ip = W.V6HOSTS[v6norm(ip)].v4;
     var hs2 = N.HOSTSVC && N.HOSTSVC(sys, ip);
@@ -355,7 +375,7 @@
     var t = REMOTE_TLS[ip];
     if (!t) { var hh = M2.net.HOSTS[ip]; if (hh && hh.ports.indexOf(port) >= 0 && port === 443) t = { chain: [leaf(sni || ip, [sni || ip], d(2026, 9, 1), d(2026, 12, 30)), INTER], alpn: "h2" }; }
     if (!t || port !== 443 && !(ip === "172.16.50.10" && port === 443)) return { err: t ? "notls" : "notls" };
-    return { ok: true, chain: t.chain, alpn: t.alpn, version: "TLSv1.3", cipher: "TLS_AES_256_GCM_SHA384" };
+    return tlsPick(["TLSv1.2", "TLSv1.3"], want, { ok: true, chain: t.chain, alpn: t.alpn, version: "TLSv1.3", cipher: "TLS_AES_256_GCM_SHA384" });
   }
   N.tlsConnect = tlsConnect;
   function nameMatch(c, host) {
@@ -392,9 +412,12 @@
     return opensslPrev(args, io, sess);
   };
   function sClient(a, io, sess) {
-    var sys = sess.sys, connect = null, sni, showcerts = false, brief = false, noSni = false, quiet = false;
+    var sys = sess.sys, connect = null, sni, showcerts = false, brief = false, noSni = false, quiet = false, want = {};
     for (var i = 0; i < a.length; i++) {
       var x = a[i];
+      if (/^-tls1(_[123])?$/.test(x)) { want.only = { "-tls1": "TLSv1", "-tls1_1": "TLSv1.1", "-tls1_2": "TLSv1.2", "-tls1_3": "TLSv1.3" }[x]; continue; }
+      if (x === "-no_tls1_3") { want.max = "TLSv1.2"; continue; }
+      if (x === "-cipher" || x === "-ciphersuites") { if (/SECLEVEL=[01]/.test(a[i + 1] || "")) want.seclevel0 = true; i++; continue; }
       if (x === "-connect") connect = a[++i]; else if (x === "-servername") sni = a[++i]; else if (x === "-noservername") noSni = true; else if (x === "-showcerts") showcerts = true; else if (x === "-brief") brief = true; else if (x === "-quiet") quiet = true;
       else if (/^-(tls1_[23]|tls1|ign_eof|crlf|no_ign_eof|status)$/.test(x)) continue; else if (/^-(alpn|verify|CAfile|cert|key|starttls|verify_hostname)$/.test(x)) i++;
       else if (!/^-/.test(x) && !connect) connect = x;
@@ -407,7 +430,9 @@
     if (g.err) { errl(io, "40A7E3B1D27F0000:error:10080002:BIO routines:BIO_lookup_ex:system lib:../crypto/bio/bio_addr.c:738:" + g.err + "\nconnect:errno=0"); return 1; }
     var ip = g.ip, r = reach(sys, ip, { port: port });
     if (!r.ok && !r.tcpOk) { errl(io, "40F7E1A9C77F0000:error:8000006" + (r.err === "netunreach" ? "5:system library:BIO_connect:Network is unreachable" : "E:system library:BIO_connect:Connection timed out") + ":../crypto/bio/bio_sock2.c:114:calling connect()\n40F7E1A9C77F0000:error:10000067:BIO routines:BIO_connect:connect error:../crypto/bio/bio_sock2.c:116:\nconnect:errno=" + (r.err === "netunreach" ? 101 : 110)); ev(sys, { k: "tls", host: host, ok: false, path: r.path, fail: r.fail, layer: 6 }); return 1; }
-    var t = tlsConnect(sys, ip, port, sni);
+    var t = tlsConnect(sys, ip, port, sni, want);
+    if (t.err === "noproto") { out(io, "CONNECTED(00000003)\n"); errl(io, "40F7E1A9C77F0000:error:0A0000BF:SSL routines:tls_setup_handshake:no protocols available:../ssl/statem/statem_lib.c:104:"); out(io, "---\nno peer certificate available\n---\nNo client certificate CA names sent\n---\nSSL handshake has read 0 bytes and written 0 bytes\nVerification: OK\n---\nNew, (NONE), Cipher is (NONE)\nSecure Renegotiation IS NOT supported\nCompression: NONE\nExpansion: NONE\nNo ALPN negotiated\nEarly data was not sent\nVerify return code: 0 (ok)\n---\n"); note(io, "(Ubuntu's OpenSSL refuses TLS 1.0 and 1.1 itself, at security level 2. To test whether a server still accepts them, add -cipher 'DEFAULT@SECLEVEL=0'.)"); return 1; }
+    if (t.err === "protocol") { out(io, "CONNECTED(00000003)\n"); errl(io, "40F7E1A9C77F0000:error:0A00042E:SSL routines:ssl3_read_bytes:tlsv1 alert protocol version:../ssl/record/rec_layer_s3.c:1593:SSL alert number 70"); out(io, "---\nno peer certificate available\n---\nNo client certificate CA names sent\n---\nSSL handshake has read 7 bytes and written 210 bytes\nVerification: OK\n---\nNew, (NONE), Cipher is (NONE)\nSecure Renegotiation IS NOT supported\nCompression: NONE\nExpansion: NONE\nNo ALPN negotiated\nEarly data was not sent\nVerify return code: 0 (ok)\n---\n"); ev(sys, { k: "tls", host: host, ok: false, path: r.path, layer: 6 }); return 1; }
     if (t.err === "refused" || (t.err === "notls" && !selfTarget(sys, ip) && !(M2.net.HOSTS[ip] && M2.net.HOSTS[ip].ports.indexOf(port) >= 0) && !(W.SEGS.srv.peers[ip] || {}).ports)) { errl(io, "40F7E1A9C77F0000:error:8000006F:system library:BIO_connect:Connection refused:../crypto/bio/bio_sock2.c:114:calling connect()\n40F7E1A9C77F0000:error:10000067:BIO routines:BIO_connect:connect error:../crypto/bio/bio_sock2.c:116:\nconnect:errno=111"); ev(sys, { k: "tls", host: host, ok: false, path: r.path, fail: r.node || "inet", layer: 4 }); return 1; }
     if (t.err === "notls") { out(io, "CONNECTED(00000003)\n"); errl(io, "40D7A2B3C47F0000:error:0A00010B:SSL routines:ssl3_get_record:wrong version number:../ssl/record/ssl3_record.c:354:"); out(io, "---\nno peer certificate available\n---\nNo client certificate CA names sent\n---\nSSL handshake has read 5 bytes and written 312 bytes\nVerification: OK\n---\nNew, (NONE), Cipher is (NONE)\nSecure Renegotiation IS NOT supported\nCompression: NONE\nExpansion: NONE\nNo ALPN negotiated\nEarly data was not sent\nVerify return code: 0 (ok)\n---\n"); ev(sys, { k: "tls", host: host, ok: false, notls: true, path: r.path, layer: 6 }); return 1; }
     var chain = t.chain, vr = verify(sys, chain);
@@ -563,6 +588,7 @@
     "203.0.113.90:443": function (req) { var p = req.path.split("?")[0]; return p === "/v2/health" ? { status: 200, headers: { "Content-Type": "application/json", Server: "awselb/2.0" }, body: "{\"status\":\"ok\",\"version\":\"2.0.0\"}\n" } : p.indexOf("/v2/") === 0 ? { status: 200, headers: { "Content-Type": "application/json", Server: "awselb/2.0" }, body: "{\"orders\":[7731,7732],\"version\":\"2.0.0\"}\n" } : { status: 404, headers: { "Content-Type": "application/json", Server: "awselb/2.0" }, body: "{\"error\":\"not found\"}\n" }; },
     "203.0.113.90:80": function (req) { return { status: 301, headers: { Location: "https://" + (req.headers.host || "api.kestrel.example.com") + req.path, "Content-Type": "text/html", Server: "awselb/2.0" }, body: "<html>\r\n<head><title>301 Moved Permanently</title></head>\r\n<body>\r\n<center><h1>301 Moved Permanently</h1></center>\r\n</body>\r\n</html>\r\n" }; }
   };
+  N.MYSITES = MYSITES;
   var LISTEN_EXTRA = { "10.20.0.21": [22, 5432], "10.20.0.31": [22, 873], "10.20.5.10": [22, 9090], "172.16.50.10": [443], "203.0.113.90": [80, 443], "10.20.30.31": [22, 873], "10.20.20.2": [22, 443], "10.20.0.10": [22, 80, 443], "10.20.0.2": [53] };
   // One TCP connection's worth of HTTP: {status, headers, body} or {err: {code, msg}}
   function httpTo(sys, ip, port, req) {
@@ -582,6 +608,7 @@
   M2.net.SITES.kestrel = function (req, sys) { var r = M2.httpRequest(sys, Object.assign({}, req, { resolveTo: "10.20.0.15" })); return r.err ? { status: 502, headers: { "Content-Type": "text/plain" }, body: "" } : r; };
   // Can a TCP connection be opened? {ok} or {err: refused|timeout|netunreach|hostunreach, r}
   function tcpOpen(sys, ip, port) {
+    if (N.preTcp) { var pt = N.preTcp(sys, ip, port, "tcp"); if (pt) return pt; }
     var r = reach(sys, ip, { port: port });
     if (!r.ok && !r.tcpOk) return { err: r.err === "netunreach" ? "netunreach" : r.err === "hostunreach" ? "hostunreach" : "timeout", r: r };
     if (r.self || selfTarget(sys, ip)) { var c = M2.tcpConnect(sys, /^127\./.test(ip) ? ip : N.isOwn(sys.nw, ip) ? ip : "10.20.0.15", port); return c.refused ? { err: "refused", r: r } : { ok: true, r: r, proc: c.proc }; }
@@ -609,8 +636,10 @@
         else if (x === "--output") o.o = a[++i]; else if (x === "--header") { m = /^([^:]+):\s*(.*)$/.exec(a[++i] || ""); if (m) o.headers[m[1].toLowerCase()] = m[2]; } else if (x === "--request") o.method = a[++i];
         else if (x === "--data" || x === "--data-raw" || x === "--data-binary") o.data = a[++i]; else if (x === "--write-out") o.wfmt = a[++i]; else if (x === "--user-agent") o.headers["user-agent"] = a[++i]; else if (x === "--user") o.user = a[++i];
         else if (x === "--resolve") { var rv = (a[++i] || "").split(":"); o.resolve = { host: rv[0], port: +rv[1], ip: rv.slice(2).join(":").replace(/^\[|\]$/g, "") }; }
+        else if (/^--tlsv1(\.[0-3])?$/.test(x)) o.tlsMin = x === "--tlsv1" ? "TLSv1" : "TLSv1" + x.slice(7).replace(/^\.0$/, "");
+        else if (x === "--tls-max") { var tm = a[++i] || ""; o.tlsMax = tm === "1.0" ? "TLSv1" : "TLSv" + tm; }
         else if (x === "--http1.1" || x === "--http1.0") o.http = "1.1"; else if (x === "--http2") o.http = "2"; else if (x === "--http3" || x === "--http3-only") o.http = "3";
-        else if (x === "--connect-timeout" || x === "--max-time" || x === "--retry" || x === "--cacert" || x === "--cert" || x === "--key") { if (x === "--cacert") o.cacert = a[i + 1]; if (x === "--cert") o.cert = a[i + 1]; i++; } else if (x === "--compressed") o.compressed = true; else if (x === "--no-progress-meter") o.noProgress = true;
+        else if (x === "--connect-timeout" || x === "--max-time" || x === "--retry" || x === "--cacert" || x === "--cert" || x === "--key") { if (x === "--cacert") o.cacert = a[i + 1]; if (x === "--cert") o.cert = a[i + 1]; if (x === "--max-time" || x === "--connect-timeout") o.maxTime = +a[i + 1]; i++; } else if (x === "--compressed") o.compressed = true; else if (x === "--no-progress-meter") o.noProgress = true;
         else if (x === "--help") { out(io, "Usage: curl [options...] <url>\n -d, --data <data>          HTTP POST data\n -f, --fail                 Fail fast with no output on HTTP errors\n -H, --header <header/@file> Pass custom header(s) to server\n -i, --include              Include protocol response headers in the output\n -I, --head                 Show document info only\n -k, --insecure             Allow insecure server connections\n -L, --location             Follow redirects\n -o, --output <file>        Write to file instead of stdout\n -s, --silent               Silent mode\n -v, --verbose              Make the operation more talkative\n -w, --write-out <format>   Use output FORMAT after completion\n     --http1.1 / --http2    Use HTTP 1.1 / try HTTP 2\n     --resolve <host:port:addr> Resolve the host+port to this address\n -4 / -6                    Resolve names to IPv4 / IPv6 addresses\n"); return null; }
         else { errl(io, "curl: option " + x + ": is unknown\ncurl: try 'curl --help' or 'curl --manual' for more information"); return { bad: 2 }; }
         continue;
@@ -621,7 +650,7 @@
           if ("sSIivfLkO46".indexOf(c) >= 0) o[c] = true;
           else if ("oHXdwAmu".indexOf(c) >= 0) {
             var val = x.slice(k + 1) || a[++i];
-            if (c === "o") o.o = val; else if (c === "H") { m = /^([^:]+):\s*(.*)$/.exec(val || ""); if (m) o.headers[m[1].toLowerCase()] = m[2]; } else if (c === "X") o.method = val; else if (c === "d") o.data = val; else if (c === "w") o.wfmt = val; else if (c === "A") o.headers["user-agent"] = val; else if (c === "u") o.user = val;
+            if (c === "o") o.o = val; else if (c === "H") { m = /^([^:]+):\s*(.*)$/.exec(val || ""); if (m) o.headers[m[1].toLowerCase()] = m[2]; } else if (c === "X") o.method = val; else if (c === "d") o.data = val; else if (c === "w") o.wfmt = val; else if (c === "A") o.headers["user-agent"] = val; else if (c === "u") o.user = val; else if (c === "m") o.maxTime = +val;
             break;
           } else { errl(io, "curl: option -" + c + ": is unknown\ncurl: try 'curl --help' or 'curl --manual' for more information"); return { bad: 2 }; }
         }
@@ -665,6 +694,7 @@
       var tc = tcpOpen(sys, ip, cur.port);
       if (tc.err) {
         ev(sys, { k: "http", url: o.url, ok: false, err: tc.err, ip: ip, port: cur.port, host: cur.host, path: tc.r.path, fail: tc.r.fail || tc.r.node || "inet", layer: tc.err === "refused" ? 4 : 3 });
+        if (tc.err === "timeout" && o.maxTime > 0) return fail(28, "Connection timed out after " + (o.maxTime * 1000 + 1) + " milliseconds");
         if (tc.err === "timeout") return fail(28, "Failed to connect to " + cur.host + " port " + cur.port + " after 133" + (hash(ip) % 900 + 100) + " ms: Couldn't connect to server");
         return fail(7, "Failed to connect to " + cur.host + " port " + cur.port + " after " + (tc.err === "hostunreach" ? 3071 : 0) + " ms: Couldn't connect to server");
       }
@@ -677,7 +707,9 @@
       }
       if (cur.scheme === "https") {
         var sni = isV4(cur.host) || isV6(cur.host) ? null : cur.host;
-        tls = tlsConnect(sys, ip, cur.port, sni);
+        tls = tlsConnect(sys, ip, cur.port, sni, { min: o.tlsMin, max: o.tlsMax });
+        if (tls.err === "noproto") return fail(35, "OpenSSL/3.0.13: error:0A0000BF:SSL routines::no protocols available");
+        if (tls.err === "protocol") { ev(sys, { k: "http", url: o.url, ok: false, tlsErr: "protocol version", path: tc.r.path, layer: 6 }); return fail(35, "OpenSSL/3.0.13: error:0A00042E:SSL routines::tlsv1 alert protocol version, errno 0"); }
         verbose("* ALPN: curl offers h2,http/1.1\n* TLSv1.3 (OUT), TLS handshake, Client hello (1):\n*  CAfile: /etc/ssl/certs/ca-certificates.crt\n*  CApath: /etc/ssl/certs");
         if (tls.err) { ev(sys, { k: "http", url: o.url, ok: false, tlsErr: true, path: tc.r.path, layer: 6 }); return fail(35, "OpenSSL/3.0.13: error:0A00010B:SSL routines::wrong version number"); }
         verbose("* TLSv1.3 (IN), TLS handshake, Server hello (2):\n* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):\n* TLSv1.3 (IN), TLS handshake, Certificate (11):\n* TLSv1.3 (IN), TLS handshake, CERT verify (15):\n* TLSv1.3 (IN), TLS handshake, Finished (20):\n* TLSv1.3 (OUT), TLS handshake, Finished (20):\n* SSL connection using " + tls.version + " / " + tls.cipher + " / X25519 / " + (/^ec/.test(tls.chain[0].key) ? "id-ecPublicKey" : "RSASSA-PSS"));

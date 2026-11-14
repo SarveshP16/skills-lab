@@ -419,7 +419,7 @@
     });
     out(io, msgs.join("\n") + "\n");
   }
-  function sshClientIp(sys) { var s = sessions(sys).filter(function (e) { return e.user === "dev"; })[0]; return s ? s.host : "198.51.100.20"; }
+  function sshClientIp(sys) { if (sys.sshFrom) return sys.sshFrom; var s = sessions(sys).filter(function (e) { return e.user === "dev"; })[0]; return s ? s.host : "198.51.100.20"; }
   function writeUfwConf(sys) { var f = fw(sys); M2.writeRoot(sys, "/etc/ufw/ufw.conf", "# /etc/ufw/ufw.conf\n#\n\n# Set to yes to start on boot. If setting this remotely, be sure to add a rule\n# to allow your remote connection before starting ufw. Eg: 'ufw allow 22/tcp'\nENABLED=" + (f.enabled ? "yes" : "no") + "\n\n# Please use the 'ufw' command to set the loglevel. Eg: 'ufw logging medium'.\n# See 'man ufw' for details.\nLOGLEVEL=" + f.logging + "\n"); }
   function statusTable(f, verbose, numbered) {
     var L = [], rules = ordered(f);

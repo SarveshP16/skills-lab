@@ -166,6 +166,7 @@
   // Link state: carrier and the negotiated speed/duplex (a forced side and an autonegotiating side end up at half duplex)
   function linkOf(nw, d) {
     if (d.kind === "loopback") return { up: d.admin, carrier: true };
+    if (d.kind === "wg") return { up: d.admin, carrier: d.admin };
     if (d.kind === "vlan") { var p = nw.ifs[d.parent]; var pl = p ? linkOf(nw, p) : { carrier: false }; return { up: d.admin, carrier: d.admin && p && p.admin && pl.carrier, lowerDown: !(p && p.admin && pl.carrier), speed: pl.speed, duplex: pl.duplex, mismatch: pl.mismatch }; }
     var sw = d.port && nw.sw[d.port];
     if (!d.cable || !sw || sw.shutdown) return { up: d.admin, carrier: false };
@@ -196,6 +197,7 @@
   // The IPv6 addresses an interface really has right now: static ones, link-local, and SLAAC from router adverts.
   function addrs6(nw, d) {
     if (d.kind === "loopback") return nw.sysctl["net.ipv6.conf.all.disable_ipv6"] === "1" ? [] : d.addrs6;
+    if (d.kind === "wg") return d.addrs6 || [];
     if (!v6enabled(nw, d) || !d.admin) return [];
     var res = [];
     var l = linkOf(nw, d);
@@ -283,11 +285,14 @@
   function reach(sys, dst, o) {
     o = o || {};
     var nw = sys.nw;
+    if (N.preReach) { var pre = N.preReach(sys, dst, o); if (pre) return pre; }
     if (isV6(dst)) return reach6(sys, dst, o);
     if (isOwn(nw, dst)) return { ok: true, self: true, rtt: 0.035, ttl: 64, hops: [{ ip: dst, name: sys.host, rtt: 0.035 }], path: ["you"], loss: 0, dev: "lo", src: dst };
     var rt = lookup4(nw, dst);
     if (!rt) return { ok: false, err: "netunreach", path: ["you"], fail: "you" };
-    var d = nw.ifs[rt.dev], l = linkOf(nw, d), seg = segOf(nw, d);
+    var d = nw.ifs[rt.dev];
+    if (d && d.kind === "wg") return N.wgReach ? N.wgReach(sys, dst, rt, d, o) : { ok: false, err: "timeout", path: ["you"], fail: "you" };
+    var l = linkOf(nw, d), seg = segOf(nw, d);
     var res = { dev: rt.dev, src: rt.src, via: rt.via || null, path: ["you"], hops: [], loss: 0, routeMtu: rt.mtu || (nw.ifs[rt.dev] || {}).mtu || 1500 };
     if (!l.carrier || !seg) return Object.assign(res, { ok: false, err: "hostunreach", from: rt.src, fail: "you", nic: true });
     res.path.push(seg === "srv" ? "sw" : seg === "bk30" ? "sw" : "sw");
@@ -298,10 +303,11 @@
     if (!p) { if (!o.quiet) learnFail(nw, nh, rt.dev); return Object.assign(res, { ok: false, err: "hostunreach", from: rt.src, fail: "sw", arpFail: nh }); }
     var dup = (nw.dups || {})[nh];
     if (perm && perm.mac.toLowerCase() !== p.mac) return Object.assign(res, { ok: false, err: "timeout", fail: "sw", wrongMac: perm.mac });
-    res.nhMac = p.mac;
+    var spoofed = nw.arpSpoof && nw.arpSpoof.ip === nh && !perm;
+    res.nhMac = spoofed ? nw.arpSpoof.mac : p.mac;
     if (dup && !perm) { res.loss = 0.5; res.dup = dup; }
     if (l.mismatch) { res.loss = Math.max(res.loss, 0.25); res.slow = true; }
-    if (!o.quiet) learn(nw, nh, p.mac, rt.dev);
+    if (!o.quiet) learn(nw, nh, res.nhMac, rt.dev);
     var speedPenalty = l.speed && l.speed < 100 ? 2.6 : l.mismatch ? 1.9 : 0;
     if (!rt.via) {
       res.path.push(p.node || "lan");
@@ -313,6 +319,8 @@
     if (!p.router) return Object.assign(res, { ok: false, err: "timeout", fail: p.node, notRouter: true });
     res.path.push(p.node);
     var hop1 = { ip: nh, name: NAMES[nh] || p.name, rtt: p.rtt + speedPenalty };
+    var sp = nw.arpSpoof;
+    if (sp && sp.ip === nh && !(perm && perm.mac.toLowerCase() === p.mac)) { res.hops.push({ ip: sp.attacker, name: null, rtt: p.rtt + 0.4 }); res.mitm = sp; speedPenalty += 0.4; res.ttlCut = 1; }
     res.hops.push(hop1);
     var base = p.rtt + speedPenalty;
     if (p.router === "vpn") {
@@ -537,14 +545,15 @@
         else { var mm = /^(.+)\/(\d+)$/.exec(s); if (mm && isV6(mm[1])) a6.push({ ip: v6norm(mm[1]), prefix: +mm[2], scope: "global" }); }
       });
       if (c.dhcp4 === true) {
-        var seg = segOf(nw, d), lease = seg && SEGS[seg].dhcp && SEGS[seg].dhcp[d.mac];
+        var seg = segOf(nw, d), rog = nw.rogueDhcp && nw.rogueDhcp.seg === seg ? nw.rogueDhcp : null, lease = rog ? rog.ip : seg && SEGS[seg].dhcp && SEGS[seg].dhcp[d.mac];
+        if (rog) d.rogueLease = rog;
         if (lease) { a4.push({ ip: lease, prefix: 24, scope: "global", dhcp: true }); ev(sys, { k: "dhcp", dev: ifn, mac: d.mac, ip: lease, seg: seg, server: SEGS[seg].dhcpServer || "10.20.0.1", layer: 7 }); }
         else journal.push("systemd-networkd: " + ifn + ": DHCPv4 client: no lease (no DHCP server answered)");
       }
       d.addrs = a4; d.addrs6 = a6;
       var routes = (Array.isArray(c.routes) ? c.routes : []).slice();
       if (c.gateway4) routes.push({ to: "default", via: c.gateway4 });
-      if (c.dhcp4 === true && d.addrs.some(function (a) { return a.dhcp; })) { var sg0 = SEGS[segOf(nw, d)] || {}; routes.push({ to: "default", via: sg0.dhcpRouter || "10.20.0.1", dhcp: true }); }
+      if (c.dhcp4 === true && d.addrs.some(function (a) { return a.dhcp; })) { var sg0 = SEGS[segOf(nw, d)] || {}; routes.push({ to: "default", via: d.rogueLease ? d.rogueLease.router : sg0.dhcpRouter || "10.20.0.1", dhcp: true, onlink: !!d.rogueLease }); }
       routes.forEach(function (r) {
         var to = String(r.to), via = r.via ? String(r.via) : null;
         if (to === "default" || to === "0.0.0.0/0" || to === "::/0") {
@@ -553,7 +562,7 @@
         }
         var cc2 = parseCidr(to);
         if (!cc2) { if (/:/.test(to)) { var m6 = /^(.+)\/(\d+)$/.exec(to); if (m6) nw.routes6.push({ dst: v6norm(m6[1]), prefix: +m6[2], via: via ? v6norm(via) : null, dev: ifn, proto: "static", metric: 1024, netplan: true }); } return; }
-        var onlink = r["on-link"] === true || d.addrs.some(function (a) { return via && inNet(via, a.ip, a.prefix); });
+        var onlink = r["on-link"] === true || r.onlink || d.addrs.some(function (a) { return via && inNet(via, a.ip, a.prefix); });
         if (via && !onlink) { journal.push("systemd-networkd: " + ifn + ": Could not set route: Nexthop has invalid gateway. Network is unreachable"); return; }
         nw.routes.push({ dst: netOf(cc2.ip, cc2.prefix), prefix: cc2.prefix, via: via, dev: ifn, proto: r.dhcp ? "dhcp" : "static", metric: r.metric != null ? +r.metric : r.dhcp ? 100 : 0, mtu: r.mtu != null ? +r.mtu : undefined, netplan: true, src: r.dhcp ? (d.addrs[0] || {}).ip : undefined });
       });
@@ -719,7 +728,7 @@
     var fl = flags(nw, d);
     return d.idx + ": " + dispName(d) + ": " + fl.f + " mtu " + d.mtu + " qdisc " + (d.kind === "ether" ? "fq_codel" : "noqueue") + " state " + fl.state + (mode ? " mode DEFAULT" : "") + " group default qlen 1000";
   }
-  function linkLine(d) { return d.kind === "loopback" ? "    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00" : "    link/ether " + d.mac + " brd ff:ff:ff:ff:ff:ff"; }
+  function linkLine(d) { if (d.kind === "wg") return "    link/none "; return d.kind === "loopback" ? "    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00" : "    link/ether " + d.mac + " brd ff:ff:ff:ff:ff:ff"; }
   function statsBlock(nw, d) {
     var s = errStats(nw, d);
     return "    RX:  bytes packets errors dropped  missed   mcast           \n" + pad(s.rxB, 14) + " " + pad(s.rxP, 7) + " " + pad(s.rxE, 6) + " " + pad(s.rxD, 7) + " " + pad(0, 7) + " " + pad(d.kind === "loopback" ? 0 : 1204, 7) + " \n" +
@@ -1155,7 +1164,7 @@
     if (!src) { errl(io, "arping: no source address in not-DAD mode"); return 2; }
     var n = count || 4, seg = segOf(nw, d);
     out(io, "ARPING " + target + " from " + src + " " + dev + "\n");
-    var p = peerOn(nw, seg, target), dupMac = (nw.dups || {})[target];
+    var p = peerOn(nw, seg, target), dupMac = (nw.dups || {})[target] || (nw.arpSpoof && nw.arpSpoof.ip === target ? nw.arpSpoof.mac : null);
     var answers = [];
     if (dad) { if (p || (nw.dupSelf && nw.dupSelf[target])) answers.push((p || {}).mac || nw.dupSelf[target]); }
     else { if (p) answers.push(p.mac); if (dupMac && seg) answers.push(dupMac); }
@@ -1280,7 +1289,7 @@
     N.sysctlBoot(sys);
     if (!nw.noBoot) N.npBoot(sys);
     // what kc-web-01 already knows about its neighbours
-    if (nw.neigh["10.20.0.1"] === undefined && lookup4(nw, "10.20.0.1") && SEGS.srv.peers["10.20.0.1"]) { var gw = reach(sys, "10.20.0.1", { quiet: true }); if (gw.ok) nw.neigh["10.20.0.1"] = { mac: MAC.gw, dev: gw.dev, state: "REACHABLE", router: true }; }
+    if (nw.neigh["10.20.0.1"] === undefined && lookup4(nw, "10.20.0.1") && SEGS.srv.peers["10.20.0.1"]) { var gw = reach(sys, "10.20.0.1", { quiet: true }); if (gw.ok) nw.neigh["10.20.0.1"] = { mac: nw.arpSpoof && nw.arpSpoof.ip === "10.20.0.1" ? nw.arpSpoof.mac : MAC.gw, dev: gw.dev, state: "REACHABLE", router: true }; }
     if (nw.neigh["10.20.0.21"] === undefined) { var db = reach(sys, "10.20.0.21", { quiet: true }); if (db.ok && !db.via) nw.neigh["10.20.0.21"] = { mac: nw.dups["10.20.0.21"] || MAC.db, dev: db.dev, state: "STALE" }; }
     nw.events = [];
     if (nw.after) nw.after(sys);

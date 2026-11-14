@@ -2622,7 +2622,8 @@
     var code = 0;
     U.eachInput("jq", files, io, sess, function (text) {
       var docs = [];
-      try { var t = text.trim(); if (t) docs = [JSON.parse(t)]; } catch (e) { errl(io, "jq: error (at <stdin>:" + lines(text).length + "): Cannot parse input: " + e.message.replace(/^JSON\.parse: /, "")); code = 2; return; }
+      // a stream of JSON values (JSON Lines, like eve.json) is read one value per line when the whole isn't one value
+      try { var t = text.trim(); if (t) { try { docs = [JSON.parse(t)]; } catch (e0) { docs = t.split("\n").filter(function (l) { return l.trim(); }).map(function (l) { return JSON.parse(l); }); } } } catch (e) { errl(io,"jq: error (at <stdin>:" + lines(text).length + "): Cannot parse input: " + e.message.replace(/^JSON\.parse: /, "")); code = 2; return; }
       docs.forEach(function (d) {
         try { jqRun(filter, d).forEach(function (r) { out(io, (raw && typeof r === "string" ? r : compact ? JSON.stringify(r) : JSON.stringify(r, null, 2)) + "\n"); }); }
         catch (e) { errl(io, "jq: error (at <stdin>:" + lines(text).length + "): " + e.message); code = 5; }

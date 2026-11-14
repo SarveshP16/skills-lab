@@ -124,7 +124,7 @@
         tcp: { sport: fromA ? o.pa : o.pb, dport: fromA ? o.pb : o.pa, flags: s.flags, seq: fromA ? seqA : seqB, ack: /S$/.test(s.flags) ? 0 : fromA ? seqB : seqA, win: fromA ? (s.flags === "S" ? 64240 : 502) : (/S/.test(s.flags) ? 65160 : 509), tsval: fromA ? tsA : tsB, tsecr: fromA ? (s.flags === "S" ? 0 : tsB) : tsA, mss: 1460 }
       };
       if (o.eth) { p.eth = { src: fromA ? o.eth[0] : o.eth[1], dst: fromA ? o.eth[1] : o.eth[0] }; }
-      if (s.data != null) p.data = s.data; if (s.enc) p.enc = s.enc; if (s.appName) p.appName = s.appName;
+      if (s.data != null) p.data = s.data; if (s.enc) p.enc = s.enc; if (s.appName) p.appName = s.appName; if (s.sni) p.sni = s.sni;
       if (/S|F/.test(s.flags)) pay += 1;
       if (fromA) { seqA += pay; tsA += 13; } else { seqB += pay; tsB += 11; }
       res.push(p);

@@ -21,6 +21,10 @@
     legacy: { label: "kc-legacy-01", kind: "server", ip: "10.20.0.40" },
     data: { label: "kc-data-01", kind: "server", ip: "10.20.0.45" },
     build: { label: "kc-build-01", kind: "server", ip: "10.20.0.60" },
+    evil: { label: "unknown host", kind: "server", ip: "10.20.0.66" },
+    bastion: { label: "kc-bastion-01", kind: "server", ip: "10.20.0.5" },
+    scan: { label: "ext-scan-01", kind: "cloud", ip: "198.51.100.200" },
+    lis: { label: "Lisbon office", kind: "cloud", ip: "10.30.0.10" },
     inet: { label: "internet", kind: "cloud", ip: "1.1.1.1" },
     site: { label: "kestrel.example.com", kind: "site", ip: "https" }
   };
@@ -42,6 +46,7 @@
   }
   function ipState(sys, ip) {
     var r = N.reach(sys, ip, { quiet: true });
+    if (r.ok && r.mitm) return { st: "warn", why: "traffic to " + ip + " passes through " + r.mitm.attacker + " first (ARP spoofing)", r: r };
     if (r.ok) return r.loss > 0 ? { st: "warn", why: (r.dup ? "two machines answer for " + ip + " (duplicate IP)" : Math.round(r.loss * 100) + "% packet loss"), r: r } : { st: "ok", why: ip + " answers in " + N.fmtMs(r.rtt) + " ms", r: r };
     var why = r.err === "netunreach" ? "no route to " + ip : r.err === "hostunreach" ? (r.nic ? "no link" : "no ARP answer from " + (r.arpFail || ip)) : "no answer from " + ip;
     return { st: "bad", why: why, r: r };
