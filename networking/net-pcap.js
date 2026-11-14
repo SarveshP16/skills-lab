@@ -36,8 +36,18 @@
     });
     return b;
   }
+  function dhcpBytes(d) {
+    var b = [d.op === "reply" ? 2 : 1, 1, 6, 0].concat(u32(d.xid || 0x3903f326), [0, 0, 0, 0], d.ciaddr ? ipBytes(d.ciaddr) : [0, 0, 0, 0], d.yiaddr ? ipBytes(d.yiaddr) : [0, 0, 0, 0], d.siaddr ? ipBytes(d.siaddr) : [0, 0, 0, 0], [0, 0, 0, 0], macBytes(d.chaddr), new Array(10 + 64 + 128).fill(0), [99, 130, 83, 99], [53, 1, { Discover: 1, Offer: 2, Request: 3, ACK: 5, NAK: 6 }[d.type] || 1]);
+    if (d.reqIp) b = b.concat([50, 4], ipBytes(d.reqIp));
+    if (d.server) b = b.concat([54, 4], ipBytes(d.server));
+    if (d.router) b = b.concat([1, 4, 255, 255, 255, 0, 3, 4], ipBytes(d.router), [6, 4], ipBytes(d.dns || d.router), [51, 4], u32(86400));
+    b.push(255); while (b.length < 300) b.push(0);
+    return b;
+  }
   function payloadBytes(p) {
     if (p.dns) return dnsBytes(p.dns);
+    if (p.dhcp) return dhcpBytes(p.dhcp);
+    if (p.snmp) { var cs = strBytes(p.snmp.community), ob = [0x06, 0x08, 0x2b, 6, 1, 2, 1, 1, 1, 0], vb = p.snmp.resp ? [0x04, strBytes(p.snmp.value || "").length].concat(strBytes(p.snmp.value || "")) : [0x05, 0]; var vbl = [0x30, ob.length + vb.length].concat(ob, vb), pdu = [0x02, 4].concat(u32(p.snmp.reqid || 0x2a1c), [0x02, 1, 0, 0x02, 1, 0, 0x30, vbl.length + 2, 0x30, vbl.length].concat(vbl.slice(2))); pdu = [p.snmp.resp ? 0xa2 : 0xa0, pdu.length].concat(pdu); var body = [0x02, 1, 1, 0x04, cs.length].concat(cs, pdu); return [0x30, body.length].concat(body); }
     if (p.bin) return p.bin.slice();
     if (p.enc) { var x = [], s = p.enc.seed || 1; for (var i = 0; i < p.enc.len; i++) { s = (s * 1103515245 + 12345) & 0x7fffffff; x.push(s & 255); } if (p.enc.tls) { x[0] = p.enc.tls; x[1] = 3; x[2] = 3; x[3] = (p.enc.len - 5) >> 8; x[4] = (p.enc.len - 5) & 255; } return x; }
     if (p.icmp) { var y = []; if (p.icmp.type === 8 || p.icmp.type === 0) { y = u32(Math.floor((p.t || 0) / 1000)).concat([0, 0, 0, 0]); for (var k = 0x10; y.length < 56; k++) y.push(k & 255); } return y; }
@@ -92,7 +102,7 @@
     b = b.concat(iph);
     spans.push({ l: p.icmp ? 3 : 4, from: b.length, to: b.length + l4.length, name: l4name });
     b = b.concat(l4);
-    if (pay.length) spans.push({ l: p.dns || p.data ? 7 : p.enc && p.enc.tls ? 6 : p.icmp ? 3 : 7, from: b.length, to: b.length + pay.length, name: p.dns ? "DNS" : p.appName || (p.data != null && /^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) |^HTTP\/1/.test(p.data) ? "HTTP" : null) || (p.enc && p.enc.tls ? "TLS (encrypted)" : p.enc ? "encrypted data" : p.icmp ? "ICMP data" : "payload") });
+    if (pay.length) spans.push({ l: p.dns || p.dhcp || p.data ? 7 : p.enc && p.enc.tls ? 6 : p.icmp ? 3 : 7, from: b.length, to: b.length + pay.length, name: p.dhcp ? "DHCP" : p.dns ? "DNS" : p.appName || (p.data != null && /^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) |^HTTP\/1/.test(p.data) ? "HTTP" : null) || (p.enc && p.enc.tls ? "TLS (encrypted)" : p.enc ? "encrypted data" : p.icmp ? "ICMP data" : "payload") });
     b = b.concat(pay);
     return { bytes: b, spans: spans, l4len: l4.length, paylen: pay.length };
   }
@@ -159,7 +169,7 @@
   /* ================================================================== filters (a useful subset of pcap-filter) */
   function FilterError(msg) { this.message = msg; }
   function parseFilter(text) {
-    var toks = String(text || "").replace(/\(/g, " ( ").replace(/\)/g, " ) ").replace(/&&/g, " and ").replace(/\|\|/g, " or ").replace(/!/g, " not ").trim().split(/\s+/).filter(Boolean);
+    var toks = String(text || "").replace(/\(/g, " ( ").replace(/\)/g, " ) ").replace(/&&/g, " and ").replace(/\|\|/g, " or ").replace(/!(?!=)/g, " not ").trim().split(/\s+/).filter(Boolean);
     if (!toks.length) return null;
     var pos = 0;
     function peek() { return toks[pos]; }
@@ -172,6 +182,14 @@
       return prim();
     }
     function prim() {
+      if (/^tcp\[(tcpflags|13)\]$/.test(peek() || "")) {
+        pos++; var mask = null, op, val;
+        if (peek() === "&") { pos++; if (peek() === "(") { pos++; mask = toks[pos++]; if (peek() !== ")") throw new FilterError("syntax error in filter expression"); pos++; } else mask = toks[pos++]; }
+        op = toks[pos++];
+        if (peek() === "(") { pos++; val = toks[pos++]; if (peek() !== ")") throw new FilterError("syntax error in filter expression"); pos++; } else val = toks[pos++];
+        if (!/^(=|==|!=|>|<)$/.test(op || "") || val === undefined) throw new FilterError("syntax error in filter expression");
+        return { tcpflags: true, mask: flagNum(mask), op: op, val: flagNum(val) };
+      }
       var p = { proto: null, dir: null, type: null, id: null };
       var protos = ["ether", "ip", "ip6", "arp", "tcp", "udp", "icmp", "icmp6", "vlan"], dirs = ["src", "dst"], types = ["host", "net", "port", "portrange"];
       if (protos.indexOf(peek()) >= 0) { p.proto = toks[pos++]; if (p.proto === "vlan" && /^\d+$/.test(peek() || "")) { p.vid = +toks[pos++]; return p; } }
@@ -194,12 +212,16 @@
     return e;
   }
   N.parseFilter = parseFilter;
+  var TCPF = { "tcp-fin": 1, "tcp-syn": 2, "tcp-rst": 4, "tcp-push": 8, "tcp-ack": 16, "tcp-urg": 32 };
+  function flagNum(x) { if (x == null) return null; return String(x).split("|").reduce(function (a, t) { t = t.trim(); var v = TCPF[t] != null ? TCPF[t] : /^0x[0-9a-f]+$/i.test(t) ? parseInt(t, 16) : /^\d+$/.test(t) ? +t : NaN; if (isNaN(v)) throw new FilterError("syntax error in filter expression"); return a | v; }, 0); }
+  function flagBits(f) { var v = 0; String(f).split("").forEach(function (c) { v |= FLAGBITS[c] || 0; }); return v; }
   function svcPort(id) { if (/^\d+$/.test(id)) return +id; var k = Object.keys(N.SVC).filter(function (x) { return N.SVC[x] === id; })[0]; return k ? +k : -1; }
   function match(sys, e, p) {
     if (!e) return true;
     if (e.or) return match(sys, e.or[0], p) || match(sys, e.or[1], p);
     if (e.and) return match(sys, e.and[0], p) && match(sys, e.and[1], p);
     if (e.not) return !match(sys, e.not, p);
+    if (e.tcpflags) { if (!p.tcp) return false; var fv = flagBits(p.tcp.flags) & (e.mask == null ? 255 : e.mask); return e.op === "!=" ? fv !== e.val : e.op === ">" ? fv > e.val : e.op === "<" ? fv < e.val : fv === e.val; }
     var src = p.ip ? p.ip.src : p.ip6 ? p.ip6.src : p.arp ? p.arp.spa : null, dst = p.ip ? p.ip.dst : p.ip6 ? p.ip6.dst : p.arp ? p.arp.tpa : null;
     var l4 = p.tcp || p.udp;
     if (e.proto && !e.type) {
@@ -286,17 +308,22 @@
         else if (o.v) line += ": " + (p.appName || "");
       } else if (pl && p.appName && o.v) line += ": " + p.appName;
     } else if (p.udp) {
-      if (p.dns) {
+      if (p.dhcp) {
+        var dh = p.dhcp;
+        line += "BOOTP/DHCP, " + (dh.op === "reply" ? "Reply" : "Request from " + dh.chaddr) + ", length " + enc.paylen;
+        if (o.v) { sub.push("\t  Client-Ethernet-Address " + dh.chaddr); if (dh.yiaddr) sub.push("\t  Your-IP " + dh.yiaddr); sub.push("\t  Vendor-rfc1048 Extensions", "\t    Magic Cookie 0x63825363", "\t    DHCP-Message (53), length 1: " + dh.type); if (dh.reqIp) sub.push("\t    Requested-IP (50), length 4: " + dh.reqIp); if (dh.server) sub.push("\t    Server-ID (54), length 4: " + dh.server); if (dh.router) sub.push("\t    Subnet-Mask (1), length 4: 255.255.255.0", "\t    Default-Gateway (3), length 4: " + dh.router, "\t    Domain-Name-Server (6), length 4: " + (dh.dns || dh.router), "\t    Lease-Time (51), length 4: 86400"); }
+      } else if (p.dns) {
         var d = p.dns;
         if (!d.resp) line += d.id + "+ " + (o.v ? "[1au] " : "") + d.qt + "? " + d.q.replace(/\.?$/, ".") + " (" + (enc.paylen) + ")";
-        else line += d.id + (d.rcode && d.rcode !== "NOERROR" ? " " + d.rcode : "") + " " + (d.an || []).length + "/0/" + (o.v ? 1 : 0) + " " + (d.an || []).map(function (x) { return x.type + " " + x.data.replace(/\.?$/, x.type === "A" || x.type === "AAAA" ? "" : "."); }).join(", ") + " (" + enc.paylen + ")";
+        else line += d.id + (d.rcode && d.rcode !== "NOERROR" ? " " + ({ NXDOMAIN: "NXDomain", SERVFAIL: "ServFail", REFUSED: "Refused" }[d.rcode] || d.rcode) : "") + " " + (d.an || []).length + "/0/" + (o.v ? 1 : 0) + " " + (d.an || []).map(function (x) { return x.type + " " + x.data.replace(/\.?$/, x.type === "A" || x.type === "AAAA" ? "" : "."); }).join(", ") + " (" + enc.paylen + ")";
       } else if (p.appName && /^NTP/.test(p.appName)) line += (o.v ? ck(l4start.from + 6) : "") + "NTPv4, " + (/request/.test(p.appName) ? "Client" : "Server") + ", length 48";
+      else if (p.snmp) line += " C=\"" + p.snmp.community + "\" " + (p.snmp.resp ? "GetResponse(43)  " + p.snmp.oid + "=\"" + (p.snmp.value || "") + "\"" : "GetRequest(28)  " + p.snmp.oid);
       else if (p.appName && /QUIC/.test(p.appName)) line += (o.v ? ck(l4start.from + 6) : "") + "UDP, length " + enc.paylen + (o.v ? "" : "");
       else line += (o.v ? ck(l4start.from + 6) : "") + "UDP, length " + enc.paylen;
     } else if (p.icmp) {
       var ic = p.icmp, ilen = enc.l4len + enc.paylen;
       if (v6) line += "ICMP6, " + (ic.type === 128 ? "echo request" : ic.type === 129 ? "echo reply" : ic.type === 134 ? "router advertisement" : ic.type === 135 ? "neighbor solicitation" : ic.type === 136 ? "neighbor advertisement" : "type " + ic.type) + (ic.type >= 128 && ic.type <= 129 ? ", id " + ic.id + ", seq " + ic.seq : "") + ", length " + ilen;
-      else line += "ICMP " + (ic.type === 8 ? "echo request" : ic.type === 0 ? "echo reply" : ic.type === 11 ? "time exceeded in-transit" : ic.type === 3 ? (ic.code === 4 ? dstA + " unreachable - need to frag (mtu 1400)" : nm(sys, ic.orig || dstA, n) + " udp port " + (ic.port || 33434) + " unreachable") : "type " + ic.type) + (ic.type === 8 || ic.type === 0 ? ", id " + ic.id + ", seq " + ic.seq : "") + ", length " + ilen;
+      else line += "ICMP " + (ic.type === 8 ? "echo request" : ic.type === 0 ? "echo reply" : ic.type === 11 ? "time exceeded in-transit" : ic.type === 3 ? (ic.code === 4 ? nm(sys, ic.orig || dstA, n) + " unreachable - need to frag (mtu " + (ic.mtu || 1400) + ")" : nm(sys, ic.orig || dstA, n) + " udp port " + (ic.port || 33434) + " unreachable") : "type " + ic.type) + (ic.type === 8 || ic.type === 0 ? ", id " + ic.id + ", seq " + ic.seq : "") + ", length " + ilen;
     }
     return { line: line, sub: sub };
   }
@@ -325,7 +352,7 @@
       if (p.udp) layers.push({ l: 4, name: "UDP datagram", unit: "datagram", fields: [["Source port", String(p.udp.sport)], ["Destination port", p.udp.dport + (N.SVC[p.udp.dport] ? " (" + N.SVC[p.udp.dport] + ")" : "")], ["Length", String(8 + e.paylen)]] });
       if (p.icmp) layers.push({ l: 3, name: p.ip6 ? "ICMPv6" : "ICMP message", unit: "", fields: [["Type", p.icmp.type + (p.icmp.type === 8 ? " (echo request)" : p.icmp.type === 0 ? " (echo reply)" : "")], ["Id / seq", p.icmp.id + " / " + p.icmp.seq]] });
       if (e.paylen) {
-        var app = p.dns ? [["Query", (p.dns.qt || "A") + " " + p.dns.q], ["Answers", (p.dns.an || []).map(function (x) { return x.data; }).join(", ") || (p.dns.resp ? "none" : "(question)")]] : p.data != null ? String(p.data).split("\r\n").filter(Boolean).slice(0, 4).map(function (l, i) { return [i ? "Header" : "First line", l]; }) : [["Data", p.appName || e.paylen + " bytes"]];
+        var app = p.dhcp ? [["DHCP message", p.dhcp.type], ["Client MAC", p.dhcp.chaddr], ["Offered IP", p.dhcp.yiaddr || "(none yet)"]] : p.dns ? [["Query", (p.dns.qt || "A") + " " + p.dns.q], ["Answers", (p.dns.an || []).map(function (x) { return x.data; }).join(", ") || (p.dns.resp ? "none" : "(question)")]] : p.data != null ? String(p.data).split("\r\n").filter(Boolean).slice(0, 4).map(function (l, i) { return [i ? "Header" : "First line", l]; }) : [["Data", p.appName || e.paylen + " bytes"]];
         var spanP = e.spans[e.spans.length - 1];
         layers.push({ l: spanP.l, name: spanP.name, unit: "data", fields: app });
       }
@@ -335,7 +362,7 @@
     return { layers: layers, bytes: e.bytes, spans: e.spans, summary: decodeLine(sys, p, { n: true }, {}, e).line };
   }
   function flagWords(f) { var w = { S: "SYN", ".": "ACK", P: "PSH", F: "FIN", R: "RST", U: "URG" }; return f + " (" + String(f).split("").map(function (c) { return w[c] || c; }).join(", ") + ")"; }
-  N.describe = describe;
+  N.describe = describe; N.decodeLine = decodeLine; N.hexDump = hexDump; N.pcapTs = ts;
 
   /* ================================================================== tcpdump */
   CMDS.tcpdump = function (args, io, sess) {
@@ -371,6 +398,7 @@
       if (d && d.kind === "vlan") pkts = (sys.nw.vlanAmbient ? sys.nw.vlanAmbient(sys, dev) : []);
       src = "live";
       errl(io, (o.v || o.w ? "tcpdump: " : "tcpdump: verbose output suppressed, use -v[v]... for full protocol decode\n") + "listening on " + dev + ", link-type " + (dev === "any" ? "LINUX_SLL2 (Linux cooked v2)" : "EN10MB (Ethernet)") + ", snapshot length 262144 bytes");
+      if (sys.inBg && N.startCapture) return N.startCapture(sess, io, { dev: dev, fexpr: fexpr, o: o, cmd: args.join(" ") });
     }
     var sel = [];
     try { pkts.forEach(function (p) { if (match(sys, fexpr, p)) sel.push(p); }); } catch (e) { if (e instanceof FilterError) { errl(io, "tcpdump: " + e.message); return 1; } throw e; }

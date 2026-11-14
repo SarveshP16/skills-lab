@@ -11,8 +11,8 @@
   var SVGNS = "http://www.w3.org/2000/svg";
   var KEY = "sudolearn.netviz.v1";
   var OSI = [[7, "Application"], [6, "Presentation"], [5, "Session"], [4, "Transport"], [3, "Network"], [2, "Data link"], [1, "Physical"]];
-  var POS = { you: [70, 118], sw: [205, 118], gw: [372, 118], inet: [522, 118], dns: [150, 36], db: [250, 36], backup: [350, 36], stor: [446, 36], lb: [150, 200], vpn: [262, 200], partner: [372, 200], mon: [470, 200], site: [522, 36] };
-  var LINKS = [["you", "sw"], ["sw", "gw"], ["gw", "inet"], ["sw", "dns"], ["sw", "db"], ["sw", "backup"], ["sw", "stor", "VLAN 30"], ["sw", "lb"], ["sw", "vpn"], ["vpn", "partner", "VPN"], ["gw", "mon", "office"], ["inet", "site"]];
+  var POS = { you: [70, 118], sw: [205, 118], gw: [372, 118], inet: [522, 118], dns: [150, 36], db: [250, 36], backup: [350, 36], stor: [446, 36], legacy: [150, 200], data: [262, 200], build: [372, 200], lb: [150, 200], vpn: [262, 200], partner: [372, 200], mon: [470, 200], site: [522, 36] };
+  var LINKS = [["you", "sw"], ["sw", "gw"], ["gw", "inet"], ["sw", "dns"], ["sw", "db"], ["sw", "backup"], ["sw", "stor", "VLAN 30"], ["sw", "legacy"], ["sw", "data"], ["sw", "build"], ["sw", "lb"], ["sw", "vpn"], ["vpn", "partner", "VPN"], ["gw", "mon", "office"], ["inet", "site"]];
   var BASE = ["you", "sw", "gw", "dns", "db", "inet"];
   var state = { src: null, lab: null, layers: [], pkts: [], pk: 0, view: "map", sys: null, anim: null, statuses: {} };
 
@@ -21,9 +21,9 @@
     var work = document.querySelector(".work"), cons = document.querySelector(".console");
     var el = document.createElement("section");
     el.className = "netviz"; el.id = "netviz"; el.setAttribute("aria-label", "Network diagram");
-    el.innerHTML = '<div class="nv-head"><div class="nv-tabs" role="tablist"><button role="tab" data-v="map" aria-selected="true">Network map</button><button role="tab" data-v="pkt" aria-selected="false">Packet<span class="dot" hidden></span></button></div>' +
+    el.innerHTML = '<div class="nv-head"><div class="nv-tabs" role="tablist"><button role="tab" data-v="map" aria-selected="true">Network map</button><button role="tab" data-v="pkt" aria-selected="false">Packet<span class="dot" hidden></span></button><button role="tab" data-v="ports" aria-selected="false">Ports</button></div>' +
       '<span class="nv-cap" id="nvCap">The map shows what kc-web-01 can reach right now.</span><button class="nv-toggle" type="button" id="nvToggle" title="Hide or show the network panel">hide</button></div>' +
-      '<div class="nv-body"><div class="nv-view nv-map" id="nvMap"></div><div class="nv-view nv-pkt" id="nvPkt" hidden></div><aside class="nv-osi" id="nvOsi" aria-label="OSI layers"></aside></div>';
+      '<div class="nv-body"><div class="nv-view nv-map" id="nvMap"></div><div class="nv-view nv-pkt" id="nvPkt" hidden></div><div class="nv-view nv-ports" id="nvPorts" hidden></div><aside class="nv-osi" id="nvOsi" aria-label="OSI layers"></aside></div>';
     work.insertBefore(el, cons);
     document.body.classList.add("net-mode");
     var collapsed = false; try { collapsed = localStorage.getItem(KEY) === "hidden"; } catch (e) { /* storage blocked: start open */ }
@@ -43,8 +43,34 @@
   function showView(v) {
     state.view = v;
     Array.prototype.forEach.call(document.querySelectorAll(".nv-tabs button"), function (b) { b.setAttribute("aria-selected", b.getAttribute("data-v") === v ? "true" : "false"); });
-    $("nvMap").hidden = v !== "map"; $("nvPkt").hidden = v !== "pkt";
+    $("nvMap").hidden = v !== "map"; $("nvPkt").hidden = v !== "pkt"; $("nvPorts").hidden = v !== "ports";
     if (v === "pkt") { document.querySelector(".nv-tabs .dot").hidden = true; renderPkt(); }
+    if (v === "ports") renderPorts();
+  }
+
+  /* ---------------- the ports card: every port the track teaches, its secure version, and what to watch for */
+  var PORTS = [
+    ["20/21", "tcp", "FTP", "990 FTPS, or SFTP on 22", "passwords in clear text"], ["22", "tcp", "SSH, SFTP, scp", "", "brute force: keys only"], ["23", "tcp", "Telnet", "22 SSH", "everything in clear text"],
+    ["25", "tcp", "SMTP, server to server", "STARTTLS", "open relays"], ["53", "udp/tcp", "DNS", "853 DoT, 443 DoH", "spoofing, amplification"], ["67/68", "udp", "DHCP", "", "rogue DHCP servers"],
+    ["69", "udp", "TFTP", "", "no authentication"], ["80", "tcp", "HTTP", "443 HTTPS", "clear text, redirect to 443"], ["110", "tcp", "POP3", "995 POP3S", "clear-text passwords"],
+    ["123", "udp", "NTP", "", "amplification"], ["143", "tcp", "IMAP", "993 IMAPS", "clear-text passwords"], ["161", "udp", "SNMP", "SNMPv3", "community \"public\""],
+    ["389", "tcp", "LDAP", "636 LDAPS", "clear-text binds"], ["443", "tcp+udp", "HTTPS, HTTP/3 (QUIC)", "", ""], ["445", "tcp", "SMB", "", "never on the internet"],
+    ["465", "tcp", "SMTP submission over TLS", "", ""], ["587", "tcp", "SMTP submission", "STARTTLS", ""], ["993", "tcp", "IMAPS", "", ""], ["995", "tcp", "POP3S", "", ""],
+    ["2375", "tcp", "Docker API", "2376 with client certs", "root on the host"], ["3306", "tcp", "MySQL", "TLS", "never on the internet"], ["3389", "tcp", "RDP", "behind a VPN", "brute force"],
+    ["5432", "tcp", "PostgreSQL", "TLS", "never on the internet"], ["6379", "tcp", "Redis", "TLS, AUTH", "often no password"], ["6443", "tcp", "Kubernetes API", "", "anonymous access"],
+    ["8080", "tcp", "HTTP alternative", "8443", "admin panels"], ["9200", "tcp", "Elasticsearch", "TLS, auth", "often open, no auth"], ["27017", "tcp", "MongoDB", "TLS, auth", "often open, no auth"]
+  ];
+  function renderPorts() {
+    var el = $("nvPorts");
+    if (el.getAttribute("data-done")) return;
+    el.setAttribute("data-done", "1");
+    el.innerHTML = '<input class="pt-find" type="search" placeholder="Filter: a port, a name or a word" aria-label="Filter the ports">' +
+      '<table class="pt"><thead><tr><th>Port</th><th>Proto</th><th>Service</th><th>Encrypted version</th><th>Watch for</th></tr></thead><tbody>' +
+      PORTS.map(function (p) { return "<tr><td>" + p[0] + "</td><td>" + p[1] + "</td><td>" + esc(p[2]) + "</td><td>" + esc(p[3]) + "</td><td>" + esc(p[4]) + "</td></tr>"; }).join("") + "</tbody></table>";
+    el.querySelector(".pt-find").addEventListener("input", function () {
+      var q = this.value.trim().toLowerCase();
+      Array.prototype.forEach.call(el.querySelectorAll("tbody tr"), function (tr) { tr.hidden = q && tr.textContent.toLowerCase().indexOf(q) < 0; });
+    });
   }
 
   /* ---------------- layers of the lab */

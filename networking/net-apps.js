@@ -55,17 +55,17 @@
     var names = n.indexOf(".") >= 0 ? [n] : [];
     searchList(sys).forEach(function (d) { names.push(n + "." + d); });
     if (n.indexOf(".") < 0) names.push(n);
-    var sawTimeout = false;
+    var sawTimeout = false, delay = 0;
     for (var k = 0; k < names.length; k++) {
       var types = fam === 6 ? ["AAAA"] : fam === 4 ? ["A"] : ["A", "AAAA"];
       for (var t = 0; t < types.length; t++) {
         var got = null;
         for (var s = 0; s < servers.length; s++) {
           var a = askServer(sys, servers[s], names[k], types[t], { quiet: true });
-          if (a.err || a.status === "SERVFAIL") { sawTimeout = true; continue; }
+          if (a.err || a.status === "SERVFAIL") { sawTimeout = true; if (a.err === "timeout") delay += 5; continue; }
           got = a; break;
         }
-        if (got && got.answers.length) return { ip: got.answers[0].data, name: names[k], dns: true, server: got.server, all: got.answers.map(function (x) { return x.data; }), canon: got.answers[0].name };
+        if (got && got.answers.length) return { delay: delay, ip: got.answers[0].data, name: names[k], dns: true, server: got.server, all: got.answers.map(function (x) { return x.data; }), canon: got.answers[0].name };
       }
     }
     return { err: sawTimeout ? "Temporary failure in name resolution" : "Name or service not known", timeout: sawTimeout };
@@ -121,7 +121,14 @@
       else if (ptr && (!internalOk || ask.via === "10.20.0.2" || srvIp === "10.20.0.2")) res = { status: "NOERROR", answers: [{ name: qname, type: "PTR", data: ptr + "." }], chain: [] };
       else res = { status: "NXDOMAIN", answers: [], chain: [] };
       res.server = srvIp;
-    } else res = askServer(sys, srvIp, qname, type, {});
+    } else {
+      res = askServer(sys, srvIp, qname, type, {});
+      var extraT = 0;
+      if (!server && res.err === "timeout") {
+        for (var si = 1; si < rc.servers.length && res.err; si++) { errl(io, ";; communications error to " + srv + "#53: timed out"); extraT += 5000; srv = srvIp = rc.servers[si]; res = askServer(sys, srvIp, qname, type, {}); }
+      }
+      res.extraT = extraT;
+    }
     var head = ["", "; <<>> " + DIGV + " <<>> " + a.join(" ")];
     if (server) head.push("; (1 server found)");
     head.push(";; global options: +cmd");
@@ -131,11 +138,11 @@
       for (var k = 0; k < 3; k++) Lr.push(";; communications error to " + srv + "#53: " + msg);
       if (!short) Lr = Lr.concat(head, ";; no servers could be reached");
       out(io, joinLines(Lr) + (short ? "" : "\n"));
-      ev(sys, { k: "dns", name: qname, server: srv, ok: false, path: res.path || ["you"], fail: res.fail || "you", layer: 7 });
+      ev(sys, { k: "dns", name: qname, type: type, tcp: tcp, server: srvIp, ok: false, timeout: true, path: res.path || ["you"], fail: res.fail || "you", layer: 7 });
       return 9;
     }
     var ans = res.chain.concat(res.answers);
-    ev(sys, { k: "dns", name: qname, server: srv, via: res.via, ok: res.status === "NOERROR" && ans.length > 0, status: res.status, path: dnsPath(sys, res), layer: 7 });
+    ev(sys, { k: "dns", name: qname, type: type, tcp: tcp, ans: ans.map(function (x) { return { type: x.type, data: x.data, name: x.name }; }), server: srvIp, via: res.via, ok: res.status === "NOERROR" && ans.length > 0, status: res.status, path: dnsPath(sys, res), layer: 7 });
     if (short) { out(io, joinLines(ans.map(function (x) { return x.data; }))); return 0; }
     var L = [];
     if (o.cmd) L = L.concat(head);
@@ -148,7 +155,7 @@
     if (o.question) L.push(";; QUESTION SECTION:", ";" + qname.replace(/\.?$/, ".") + "\t\tIN\t" + type, "");
     if (ans.length && o.answer) { if (o.comments) L.push(";; ANSWER SECTION:"); ans.forEach(function (x) { L.push(rr(sys, x)); }); L.push(""); }
     if (!ans.length && o.authority && res.status !== "SERVFAIL") { if (o.comments) L.push(";; AUTHORITY SECTION:"); L.push(soaFor(qname)); L.push(""); }
-    if (o.stats) L.push(";; Query time: " + (/^127\./.test(srvIp) ? 12 : Math.max(1, Math.round((res.rtt || 10) * 2))) + " msec", ";; SERVER: " + srvIp + "#53(" + srv + ") (" + (tcp ? "TCP" : "UDP") + ")", ";; WHEN: " + dnsDate(sys), ";; MSG SIZE  rcvd: " + (40 + qname.length + ans.length * 16), "");
+    if (o.stats) L.push(";; Query time: " + ((res.extraT || 0) + (/^127\./.test(srvIp) ? 12 : Math.max(1, Math.round((res.rtt || 10) * 2)))) + " msec", ";; SERVER: " + srvIp + "#53(" + srv + ") (" + (tcp ? "TCP" : "UDP") + ")", ";; WHEN: " + dnsDate(sys), ";; MSG SIZE  rcvd: " + (40 + qname.length + ans.length * 16), "");
     out(io, joinLines(L));
     return 0;
   };
@@ -343,6 +350,8 @@
       return { ok: true, chain: chain, alpn: h2 ? "h2" : "http/1.1", version: "TLSv1.3", cipher: "TLS_AES_256_GCM_SHA384", server: srv.names[0], certPath: cp };
     }
     if (isV6(ip) && W.V6HOSTS[v6norm(ip)]) ip = W.V6HOSTS[v6norm(ip)].v4;
+    var hs2 = N.HOSTSVC && N.HOSTSVC(sys, ip);
+    if (hs2 && hs2[port]) { var sv2 = hs2[port]; if (!sv2.tls) return { err: "notls" }; return { ok: true, chain: sv2.tls, alpn: sv2.alpn || "http/1.1", version: "TLSv1.3", cipher: "TLS_AES_256_GCM_SHA384", starttls: sv2.starttls, clientCert: sv2.clientCert }; }
     var t = REMOTE_TLS[ip];
     if (!t) { var hh = M2.net.HOSTS[ip]; if (hh && hh.ports.indexOf(port) >= 0 && port === 443) t = { chain: [leaf(sni || ip, [sni || ip], d(2026, 9, 1), d(2026, 12, 30)), INTER], alpn: "h2" }; }
     if (!t || port !== 443 && !(ip === "172.16.50.10" && port === 443)) return { err: t ? "notls" : "notls" };
@@ -562,6 +571,8 @@
       var r = M2.httpRequest(sys, Object.assign({}, req, { resolveTo: local, port: port }));
       return r;
     }
+    var hs3 = N.HOSTSVC && N.HOSTSVC(sys, ip), sv3 = hs3 && hs3[port];
+    if (sv3) { if (!sv3.http) return { err: { code: 1, msg: "Received HTTP/0.9 when not allowed" } }; var y = sv3.http(req); y.headers = Object.assign({ Date: httpDate(sys.now) }, y.headers); y.headers["Content-Length"] = String(bytes(y.body)); return y; }
     var f = MYSITES[ip + ":" + port];
     if (f) { var x = f(req); x.headers = Object.assign({ Date: httpDate(sys.now) }, x.headers); x.headers["Content-Length"] = String(bytes(x.body)); return x; }
     var v4 = isV6(ip) && W.V6HOSTS[v6norm(ip)] ? W.V6HOSTS[v6norm(ip)].v4 : ip;
@@ -575,6 +586,8 @@
     if (!r.ok && !r.tcpOk) return { err: r.err === "netunreach" ? "netunreach" : r.err === "hostunreach" ? "hostunreach" : "timeout", r: r };
     if (r.self || selfTarget(sys, ip)) { var c = M2.tcpConnect(sys, /^127\./.test(ip) ? ip : N.isOwn(sys.nw, ip) ? ip : "10.20.0.15", port); return c.refused ? { err: "refused", r: r } : { ok: true, r: r, proc: c.proc }; }
     if ((sys.nw.filtered || {})[ip + ":" + port]) return { err: "timeout", r: r, filtered: true };
+    var hs = N.HOSTSVC && N.HOSTSVC(sys, ip);
+    if (hs) { var sv = hs[port]; if (sv && sv.filtered) return { err: "timeout", r: r, filtered: true }; return sv && !sv.udp ? { ok: true, r: r, svc: sv } : { err: "refused", r: r }; }
     var extra = LISTEN_EXTRA[ip];
     if (extra) return extra.indexOf(port) >= 0 ? { ok: true, r: r } : { err: "refused", r: r };
     if (isV6(ip)) { var h6 = W.V6HOSTS[v6norm(ip)]; return h6 && h6.ports.indexOf(port) >= 0 ? { ok: true, r: r } : { err: "refused", r: r }; }
@@ -597,7 +610,7 @@
         else if (x === "--data" || x === "--data-raw" || x === "--data-binary") o.data = a[++i]; else if (x === "--write-out") o.wfmt = a[++i]; else if (x === "--user-agent") o.headers["user-agent"] = a[++i]; else if (x === "--user") o.user = a[++i];
         else if (x === "--resolve") { var rv = (a[++i] || "").split(":"); o.resolve = { host: rv[0], port: +rv[1], ip: rv.slice(2).join(":").replace(/^\[|\]$/g, "") }; }
         else if (x === "--http1.1" || x === "--http1.0") o.http = "1.1"; else if (x === "--http2") o.http = "2"; else if (x === "--http3" || x === "--http3-only") o.http = "3";
-        else if (x === "--connect-timeout" || x === "--max-time" || x === "--retry" || x === "--cacert") { if (x === "--cacert") o.cacert = a[i + 1]; i++; } else if (x === "--compressed") o.compressed = true; else if (x === "--no-progress-meter") o.noProgress = true;
+        else if (x === "--connect-timeout" || x === "--max-time" || x === "--retry" || x === "--cacert" || x === "--cert" || x === "--key") { if (x === "--cacert") o.cacert = a[i + 1]; if (x === "--cert") o.cert = a[i + 1]; i++; } else if (x === "--compressed") o.compressed = true; else if (x === "--no-progress-meter") o.noProgress = true;
         else if (x === "--help") { out(io, "Usage: curl [options...] <url>\n -d, --data <data>          HTTP POST data\n -f, --fail                 Fail fast with no output on HTTP errors\n -H, --header <header/@file> Pass custom header(s) to server\n -i, --include              Include protocol response headers in the output\n -I, --head                 Show document info only\n -k, --insecure             Allow insecure server connections\n -L, --location             Follow redirects\n -o, --output <file>        Write to file instead of stdout\n -s, --silent               Silent mode\n -v, --verbose              Make the operation more talkative\n -w, --write-out <format>   Use output FORMAT after completion\n     --http1.1 / --http2    Use HTTP 1.1 / try HTTP 2\n     --resolve <host:port:addr> Resolve the host+port to this address\n -4 / -6                    Resolve names to IPv4 / IPv6 addresses\n"); return null; }
         else { errl(io, "curl: option " + x + ": is unknown\ncurl: try 'curl --help' or 'curl --manual' for more information"); return { bad: 2 }; }
         continue;
@@ -627,7 +640,7 @@
     if (!u) { errl(io, "curl: (3) URL rejected: Malformed input to a URL function"); return 3; }
     var method = o.method || (o.I ? "HEAD" : o.data !== undefined ? "POST" : "GET");
     var showErr = !o.s || o.S, verbose = function (t) { if (o.v) errl(io, t); };
-    var redirects = 0, cur = u, hostHdr = o.headers.host || (u.host + (u.explicitPort ? ":" + u.port : "")), res, tls = null, ip, outText = "", httpv = "1.1", t0 = { dns: 0.004, conn: 0, app: 0, tot: 0 };
+    var g = null, redirects = 0, cur = u, hostHdr = o.headers.host || (u.host + (u.explicitPort ? ":" + u.port : "")), res, tls = null, ip, outText = "", httpv = "1.1", t0 = { dns: 0.004, conn: 0, app: 0, tot: 0 };
     var stdoutTty = !!io.tty && !o.o && !o.O;
     function fail(code, msg, extra) { if (showErr) errl(io, "curl: (" + code + ") " + msg + (extra || "")); if (o.wfmt) out(io, wfmt(o.wfmt, { http_code: "000", response_code: "0" })); return code; }
     function wfmt(f, vals) { return f.replace(/%\{(\w+)\}/g, function (m0, k) { return vals[k] !== undefined ? vals[k] : ""; }).replace(/\\n/g, "\n").replace(/\\t/g, "\t"); }
@@ -637,7 +650,7 @@
       if (o.resolve && o.resolve.host === cur.host && o.resolve.port === cur.port) ip = o.resolve.ip;
       else if (isV4(lit) || isV6(lit)) ip = isV6(lit) ? v6norm(lit) : lit;
       else {
-        var g = null, g6 = null;
+        g = null; var g6 = null;
         if (fam !== 4) g6 = getaddrinfo(sys, lit, 6);
         if (fam !== 6) g = getaddrinfo(sys, lit, 4);
         var cands = [];
@@ -651,12 +664,17 @@
       verbose("*   Trying " + (isV6(ip) ? "[" + ip + "]" : ip) + ":" + cur.port + "...");
       var tc = tcpOpen(sys, ip, cur.port);
       if (tc.err) {
-        ev(sys, { k: "http", url: o.url, ok: false, err: tc.err, path: tc.r.path, fail: tc.r.fail || tc.r.node || "inet", layer: tc.err === "refused" ? 4 : 3 });
+        ev(sys, { k: "http", url: o.url, ok: false, err: tc.err, ip: ip, port: cur.port, host: cur.host, path: tc.r.path, fail: tc.r.fail || tc.r.node || "inet", layer: tc.err === "refused" ? 4 : 3 });
         if (tc.err === "timeout") return fail(28, "Failed to connect to " + cur.host + " port " + cur.port + " after 133" + (hash(ip) % 900 + 100) + " ms: Couldn't connect to server");
         return fail(7, "Failed to connect to " + cur.host + " port " + cur.port + " after " + (tc.err === "hostunreach" ? 3071 : 0) + " ms: Couldn't connect to server");
       }
       verbose("* Connected to " + cur.host + " (" + ip + ") port " + cur.port);
       httpv = "1.1";
+      if (tc.r && tc.r.pmtu && sys.nw.pmtuBlackhole && (tc.r.routeMtu || 1500) > tc.r.pmtu) {
+        if (cur.scheme === "https") verbose("* ALPN: curl offers h2,http/1.1\n* TLSv1.3 (OUT), TLS handshake, Client hello (1):");
+        ev(sys, { k: "http", url: o.url, ok: false, err: "timeout", hang: true, ip: ip, port: cur.port, host: cur.host, tls: cur.scheme === "https", path: tc.r.path, fail: tc.r.node || "inet", layer: 3 });
+        return fail(28, cur.scheme === "https" ? "SSL connection timeout" : "Operation timed out after 30001 milliseconds with 0 bytes received");
+      }
       if (cur.scheme === "https") {
         var sni = isV4(cur.host) || isV6(cur.host) ? null : cur.host;
         tls = tlsConnect(sys, ip, cur.port, sni);
@@ -675,6 +693,7 @@
           verbose("*  SSL certificate verify ok.");
         } else verbose("*  SSL certificate verify result: " + (vr.code ? vr.text + " (" + vr.code + "), continuing anyway." : "ok"));
         if (negotiated === "h2") httpv = "2";
+        if (tls.clientCert && !o.cert) { verbose("* TLSv1.3 (IN), TLS alert, unknown (628):"); ev(sys, { k: "http", url: o.url, ok: false, tlsErr: "client certificate required", ip: ip, port: cur.port, path: tc.r.path, layer: 6 }); return fail(56, "OpenSSL SSL_read: OpenSSL/3.0.13: error:0A00045C:SSL routines::tlsv13 alert certificate required, errno 0"); }
       }
       var hdrs = Object.assign({ host: hostHdr, "user-agent": "curl/8.5.0", accept: "*/*" }, o.headers);
       if (o.user) hdrs.authorization = "Basic " + b64enc(unescape(encodeURIComponent(o.user)));
@@ -702,7 +721,7 @@
       }
       break;
     }
-    ev(sys, { k: "http", url: o.url, ok: res.status < 400, status: res.status, tls: !!tls, http: httpv, path: (reach(sys, ip, { quiet: true }).path), layer: 7 });
+    ev(sys, { k: "http", url: o.url, ok: res.status < 400, status: res.status, tls: !!tls, http: httpv, ip: ip, port: cur.port, host: cur.host, method: method, reqPath: cur.path, hdrs: hdrs, resp: res, dnsName: isV4(cur.host) || isV6(cur.host) ? null : cur.host, path: (reach(sys, ip, { quiet: true }).path), layer: 7 });
     if (o.f && res.status >= 400) { if (showErr) errl(io, "curl: (22) The requested URL returned error: " + res.status); return 22; }
     var body = method === "HEAD" ? "" : res.body;
     if (method === "HEAD" && res.headLen != null) res.headers["Content-Length"] = String(res.headLen);
@@ -714,7 +733,7 @@
     if (!o.s && !o.noProgress && !stdoutTty && !o.v) { var nb = bytes(outText); errl(io, "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n                                 Dload  Upload   Total   Spent    Left  Speed\n100 " + pad(nb, 5) + "  100 " + pad(nb, 5) + "    0     0  " + pad(Math.max(1, Math.round(nb / 2)) + "k", 5) + "      0 --:--:-- --:--:-- --:--:-- " + pad(Math.max(1, nb) + "k", 5)); }
     if (o.v) verbose("* Connection #0 to host " + cur.host + " left intact");
     if (o.wfmt) {
-      var rt = reach(sys, ip, { quiet: true }).rtt || 0.1, dnsT = 0.004 + (isV4(cur.host) ? 0 : 0.008), con = dnsT + rt / 1000, app = tls ? con + 2 * rt / 1000 : 0, st = (tls ? app : con) + rt / 1000 + 0.002;
+      var rt = reach(sys, ip, { quiet: true }).rtt || 0.1, dnsT = 0.004 + (isV4(cur.host) ? 0 : 0.008) + (g && g.delay ? g.delay : 0), con = dnsT + rt / 1000, app = tls ? con + 2 * rt / 1000 : 0, st = (tls ? app : con) + rt / 1000 + 0.002 + (res.delay || 0) / 1000;
       out(io, wfmt(o.wfmt, { http_code: pad(res.status, 3, "0"), response_code: res.status, http_version: httpv, size_download: bytes(body), size_header: bytes(hb), time_namelookup: dnsT.toFixed(6), time_connect: con.toFixed(6), time_appconnect: app.toFixed(6), time_starttransfer: st.toFixed(6), time_total: (st + 0.0003).toFixed(6), remote_ip: ip, remote_port: cur.port, local_ip: (reach(sys, ip, { quiet: true }).src || ""), scheme: cur.scheme.toUpperCase(), content_type: res.headers["Content-Type"] || res.headers["content-type"] || "", url_effective: cur.scheme + "://" + cur.host + cur.path, num_redirects: redirects, ssl_verify_result: tls ? verify(sys, tls.chain).code : 0, redirect_url: res.headers.Location || "" }));
     }
     sys.actions.push("curl " + o.url);
@@ -747,7 +766,7 @@
     }
     if (rest.length < 2) { errl(io, "usage: nc [-46CDdFhklNnrStUuvZz] [-I length] [-i interval] [-M ttl]\n\t  [-m minttl] [-O length] [-P proxy_username] [-p source_port]\n\t  [-q seconds] [-s sourceaddr] [-T keyword] [-V rtable] [-W recvlimit]\n\t  [-w timeout] [-X proxy_protocol] [-x proxy_address[:port]]\n\t  [destination] [port]"); return 1; }
     var host = rest[0], ports = [];
-    rest.slice(1).forEach(function (p) { var m = /^(\d+)-(\d+)$/.exec(p); if (m) { for (var k = +m[1]; k <= +m[2] && ports.length < 200; k++) ports.push(k); } else if (/^\d+$/.test(p)) ports.push(+p); else { var f = Object.keys(SVC).filter(function (k) { return SVC[k] === p; })[0]; if (f) ports.push(+f); } });
+    rest.slice(1).forEach(function (p) { var m = /^(\d+)-(\d+)$/.exec(p); if (m) { for (var k = +m[1]; k <= +m[2] && ports.length < 1100; k++) ports.push(k); } else if (/^\d+$/.test(p)) ports.push(+p); else { var f = Object.keys(SVC).filter(function (k) { return SVC[k] === p; })[0]; if (f) ports.push(+f); } });
     if (!ports.length) { errl(io, "nc: port number invalid: " + rest[1]); return 1; }
     var g = isV4(host) || isV6(host) ? { ip: host } : getaddrinfo(sys, host, six ? 6 : 4);
     if (g.err) { errl(io, "nc: getaddrinfo for host \"" + host + "\" port " + ports[0] + ": " + g.err); return 1; }
@@ -779,6 +798,8 @@
       ev(sys, { k: "tcp", to: ip, port: port, ok: true, path: tc.r.path, layer: 4 });
       if (z) return;
       var input = io.stdin;
+      var talk = N.talk ? N.talk(sys, ip, port, input, tc) : null;
+      if (talk != null) { out(io, talk); return; }
       if (input != null && input !== "" && /^[A-Z]+ \S+ HTTP\/\d/.test(input)) { out(io, rawHttp(sys, ip, port, input)); return; }
       if (port === 22) out(io, "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5\n");
       else if (port === 25) out(io, "220 mail.kestrel.example.com ESMTP Postfix (Ubuntu)\n");

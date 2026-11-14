@@ -18,6 +18,9 @@
     partner: { label: "partner API", kind: "cloud", ip: "172.16.50.10" },
     mon: { label: "kc-mon-01", kind: "server", ip: "10.20.5.10" },
     stor: { label: "backup storage", kind: "server", ip: "10.20.30.31" },
+    legacy: { label: "kc-legacy-01", kind: "server", ip: "10.20.0.40" },
+    data: { label: "kc-data-01", kind: "server", ip: "10.20.0.45" },
+    build: { label: "kc-build-01", kind: "server", ip: "10.20.0.60" },
     inet: { label: "internet", kind: "cloud", ip: "1.1.1.1" },
     site: { label: "kestrel.example.com", kind: "site", ip: "https" }
   };

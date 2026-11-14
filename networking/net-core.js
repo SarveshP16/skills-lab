@@ -288,7 +288,7 @@
     var rt = lookup4(nw, dst);
     if (!rt) return { ok: false, err: "netunreach", path: ["you"], fail: "you" };
     var d = nw.ifs[rt.dev], l = linkOf(nw, d), seg = segOf(nw, d);
-    var res = { dev: rt.dev, src: rt.src, via: rt.via || null, path: ["you"], hops: [], loss: 0 };
+    var res = { dev: rt.dev, src: rt.src, via: rt.via || null, path: ["you"], hops: [], loss: 0, routeMtu: rt.mtu || (nw.ifs[rt.dev] || {}).mtu || 1500 };
     if (!l.carrier || !seg) return Object.assign(res, { ok: false, err: "hostunreach", from: rt.src, fail: "you", nic: true });
     res.path.push(seg === "srv" ? "sw" : seg === "bk30" ? "sw" : "sw");
     var nh = rt.via || dst;
@@ -322,7 +322,7 @@
         res.hops.push({ ip: "172.31.255.2", name: null, rtt: base + 17.9 });
         if (!ph || (nw.down || {})[dst]) return Object.assign(res, { ok: false, err: "timeout", fail: "partner" });
         res.hops.push({ ip: dst, name: NAMES[dst] || null, rtt: base + ph.rtt });
-        return Object.assign(res, { ok: true, rtt: base + ph.rtt, ttl: 62, node: "partner", peer: ph });
+        return Object.assign(res, { ok: true, rtt: base + ph.rtt, ttl: 62, node: "partner", peer: ph, pmtu: nw.partnerMtu || 1400, pmtuFrom: "10.20.0.254" });
       }
       return Object.assign(res, { ok: false, err: "timeout", fail: "vpn" });
     }
@@ -402,7 +402,7 @@
   N.learn = learn;
 
   /* ---------------- events for the visual panel (one list per command line) */
-  function ev(sys, e) { if (!sys.nw) return; e.i = sys.cmdIndex == null ? -1 : sys.cmdIndex; sys.nw.events.push(e); }
+  function ev(sys, e) { if (!sys.nw) return; e.i = sys.cmdIndex == null ? -1 : sys.cmdIndex; sys.nw.events.push(e); if (N.onEv) N.onEv(sys, e); }
   N.ev = ev;
 
   /* ---------------- names: /etc/hosts, then DNS through the resolver (see net-apps.js for the DNS side) */
@@ -538,13 +538,13 @@
       });
       if (c.dhcp4 === true) {
         var seg = segOf(nw, d), lease = seg && SEGS[seg].dhcp && SEGS[seg].dhcp[d.mac];
-        if (lease) a4.push({ ip: lease, prefix: 24, scope: "global", dhcp: true });
+        if (lease) { a4.push({ ip: lease, prefix: 24, scope: "global", dhcp: true }); ev(sys, { k: "dhcp", dev: ifn, mac: d.mac, ip: lease, seg: seg, server: SEGS[seg].dhcpServer || "10.20.0.1", layer: 7 }); }
         else journal.push("systemd-networkd: " + ifn + ": DHCPv4 client: no lease (no DHCP server answered)");
       }
       d.addrs = a4; d.addrs6 = a6;
       var routes = (Array.isArray(c.routes) ? c.routes : []).slice();
       if (c.gateway4) routes.push({ to: "default", via: c.gateway4 });
-      if (c.dhcp4 === true && d.addrs.some(function (a) { return a.dhcp; })) routes.push({ to: "default", via: "10.20.0.1", dhcp: true });
+      if (c.dhcp4 === true && d.addrs.some(function (a) { return a.dhcp; })) { var sg0 = SEGS[segOf(nw, d)] || {}; routes.push({ to: "default", via: sg0.dhcpRouter || "10.20.0.1", dhcp: true }); }
       routes.forEach(function (r) {
         var to = String(r.to), via = r.via ? String(r.via) : null;
         if (to === "default" || to === "0.0.0.0/0" || to === "::/0") {
@@ -555,11 +555,11 @@
         if (!cc2) { if (/:/.test(to)) { var m6 = /^(.+)\/(\d+)$/.exec(to); if (m6) nw.routes6.push({ dst: v6norm(m6[1]), prefix: +m6[2], via: via ? v6norm(via) : null, dev: ifn, proto: "static", metric: 1024, netplan: true }); } return; }
         var onlink = r["on-link"] === true || d.addrs.some(function (a) { return via && inNet(via, a.ip, a.prefix); });
         if (via && !onlink) { journal.push("systemd-networkd: " + ifn + ": Could not set route: Nexthop has invalid gateway. Network is unreachable"); return; }
-        nw.routes.push({ dst: netOf(cc2.ip, cc2.prefix), prefix: cc2.prefix, via: via, dev: ifn, proto: r.dhcp ? "dhcp" : "static", metric: r.metric != null ? +r.metric : r.dhcp ? 100 : 0, netplan: true, src: r.dhcp ? (d.addrs[0] || {}).ip : undefined });
+        nw.routes.push({ dst: netOf(cc2.ip, cc2.prefix), prefix: cc2.prefix, via: via, dev: ifn, proto: r.dhcp ? "dhcp" : "static", metric: r.metric != null ? +r.metric : r.dhcp ? 100 : 0, mtu: r.mtu != null ? +r.mtu : undefined, netplan: true, src: r.dhcp ? (d.addrs[0] || {}).ip : undefined });
       });
       var ns = c.nameservers || {};
       if (ns.addresses || ns.search) nw.linkDns[ifn] = { servers: (ns.addresses || []).map(String), search: (ns.search || []).map(String) };
-      if (c.dhcp4 === true && d.addrs.some(function (a) { return a.dhcp; }) && !ns.addresses) nw.linkDns[ifn] = { servers: ["10.20.0.2"], search: ["kestrel.internal"] };
+      if (c.dhcp4 === true && d.addrs.some(function (a) { return a.dhcp; }) && !ns.addresses) nw.linkDns[ifn] = { servers: [(SEGS[segOf(nw, d)] || {}).dhcpDns || "10.20.0.2"], search: ["kestrel.internal"] };
     });
     // the neighbour table forgets entries on links that changed
     Object.keys(nw.neigh).forEach(function (ip) { var n = nw.neigh[ip]; if (!n.perm && (!nw.ifs[n.dev] || !nw.ifs[n.dev].addrs.length)) delete nw.neigh[ip]; });
@@ -898,7 +898,7 @@
         }
         var rs = routes4(nw).slice().sort(function (x, y) { return (y.prefix === 0) - (x.prefix === 0) || ip2n(x.dst) - ip2n(y.dst) || y.prefix - x.prefix; });
         out(io, joinLines(rs.map(function (r) {
-          return (r.prefix === 0 ? "default" : r.dst + "/" + r.prefix) + (r.via ? " via " + r.via : "") + " dev " + r.dev + " proto " + r.proto + (r.proto === "kernel" ? " scope link" : "") + (r.src && (r.proto !== "static") ? " src " + r.src : "") + (r.metric ? " metric " + r.metric : "") + (r.linkdown ? " linkdown" : "") + " ";
+          return (r.prefix === 0 ? "default" : r.dst + "/" + r.prefix) + (r.via ? " via " + r.via : "") + " dev " + r.dev + " proto " + r.proto + (r.proto === "kernel" ? " scope link" : "") + (r.src && (r.proto !== "static") ? " src " + r.src : "") + (r.metric ? " metric " + r.metric : "") + (r.mtu ? " mtu " + r.mtu : "") + (r.linkdown ? " linkdown" : "") + " ";
         })));
         ev(sys, { k: "look", what: "route" });
         return 0;
@@ -936,7 +936,7 @@
         var exist = nw.routes.findIndex(function (r) { return r.dst === net && r.prefix === c.prefix && (r.metric || 0) === (+metric || 0); });
         if (exist >= 0 && cmd === "add") { errl(io, "RTNETLINK answers: File exists"); return 2; }
         if (exist >= 0) nw.routes.splice(exist, 1);
-        nw.routes.push({ dst: net, prefix: c.prefix, via: via || null, dev: dev || on.dev, proto: "static", metric: metric ? +metric : 0, manual: true });
+        nw.routes.push({ dst: net, prefix: c.prefix, via: via || null, dev: dev || on.dev, proto: "static", metric: metric ? +metric : 0, manual: true, mtu: arg("mtu") ? +arg("mtu") : undefined });
         ev(sys, { k: "link", what: "ip route " + cmd + " " + dst });
         return 0;
       }
@@ -1074,8 +1074,10 @@
     var times = [], errs = 0;
     var replyName = v6 ? (/%/.test(dstSpec) ? dstSpec : ip) : (res.viaName ? (NAMES[ip] || ip) + " (" + ip + ")" : ip);
     var icmpOff = !r.self && (nw.icmpBlock || {})[ip];
+    var tooBig = mdo && !r.self && r.pmtu && size + 28 > r.pmtu;
     for (var k = 1; k <= n; k++) {
-      if (r.ok && !icmpOff && !lost(ip + "/" + k + "/" + (sys.cmdIndex || 0), r.loss || 0) && !(r.slow && k % 4 === 2) && !(r.dup && k % 2 === 0)) {
+      if (tooBig) { if (!nw.pmtuBlackhole) { errs++; if (!quiet) out(io, "From " + r.pmtuFrom + " icmp_seq=" + k + " Frag needed and DF set (mtu = " + r.pmtu + ")\n"); } }
+      else if (r.ok && !icmpOff && !lost(ip + "/" + k + "/" + (sys.cmdIndex || 0), r.loss || 0) && !(r.slow && k % 4 === 2) && !(r.dup && k % 2 === 0)) {
         var t = r.rtt * (0.93 + (hash(ip + k) % 15) / 100) * (r.slow ? 1 + (hash("j" + k) % 90) / 30 : 1);
         times.push(t);
         if (!quiet) out(io, (size + 8) + " bytes from " + replyName + ": icmp_seq=" + k + " ttl=" + r.ttl + " time=" + fmtMs(t) + " ms\n");
@@ -1090,7 +1092,7 @@
     if (times.length) { var mn = Math.min.apply(null, times), mx = Math.max.apply(null, times), avg = times.reduce(function (s, v) { return s + v; }, 0) / times.length; out(io, "rtt min/avg/max/mdev = " + [mn, avg, mx, (mx - mn) / 3].map(function (v) { return v.toFixed(3); }).join("/") + " ms" + (r.err === "hostunreach" ? ", pipe 3" : "") + "\n"); }
     else if (r.err === "hostunreach") out(io, "pipe 4\n");
     if (!count) note(io, "(ping keeps going until you press Ctrl+C; the lab stopped it after 4. Use ping -c 4 to send a fixed number.)");
-    ev(sys, { k: "ping", to: ip, ok: times.length > 0, loss: loss, path: r.path, fail: r.ok ? null : r.fail, err: r.err, nic: !!r.nic, v6: v6, layer: r.nic ? 1 : 3 });
+    ev(sys, { k: "ping", to: ip, n: n, got: times.length, size: size, df: mdo, tooBig: !!tooBig, ttlr: r.ttl, ok: times.length > 0, loss: loss, path: r.path, fail: r.ok ? null : r.fail, err: r.err, nic: !!r.nic, v6: v6, layer: r.nic ? 1 : 3 });
     return times.length ? 0 : 1;
   };
   CMDS.ping6 = function (args, io, sess) { return CMDS.ping(["ping6"].concat(args.slice(1)), io, sess); };

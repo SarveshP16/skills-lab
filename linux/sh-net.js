@@ -749,12 +749,30 @@
     if (pp && loc && first(loc.d, "proxy_pass")) {
       var u = /^https?:\/\/([^:/]+)(?::(\d+))?(\/.*)?$/.exec(pp.args[0]);
       var upPath = u && u[3] ? u[3] + path.slice(loc.path.length) : req.path;
-      var upIp = u ? resolve(sys, u[1]) : null, upPort = u && u[2] ? +u[2] : 80;
-      var conn = upIp ? tcpConnect(sys, upIp, upPort) : { refused: true };
-      if (!conn.self || !conn.proc) return fail(502, "error", "connect() failed (111: Connection refused) while connecting to upstream, upstream: \"" + (u ? "http://" + u[1] + ":" + upPort + upPath : pp.args[0]) + "\"");
-      var up = handleBy(sys, conn.proc, Object.assign({}, req, { path: upPath, port: upPort, localIp: upIp }), "127.0.0.1");
-      res.status = up.status; res.body = up.body; res.headers = { "Content-Type": up.headers["Content-Type"] };
-      return finish();
+      // an upstream { server ...; } group: round robin, and on a refused connection try the next server
+      var group = u && conf.http.block.filter(function (d) { return d.name === "upstream" && d.args[0] === u[1] && d.block; })[0];
+      var targets = group ? group.block.filter(function (d) { return d.name === "server"; }).map(function (d) { var hp = /^([^:]+)(?::(\d+))?$/.exec(d.args[0]); return { host: hp[1], port: hp[2] ? +hp[2] : 80, backup: d.args.indexOf("backup") >= 0, down: d.args.indexOf("down") >= 0 }; }).filter(function (t) { return !t.down; }) : u ? [{ host: u[1], port: u[2] ? +u[2] : 80 }] : [];
+      if (group) {
+        sys.nginxRR = sys.nginxRR || {};
+        var prim = targets.filter(function (t) { return !t.backup; }), k0 = (sys.nginxRR[u[1]] = ((sys.nginxRR[u[1]] == null ? -1 : sys.nginxRR[u[1]]) + 1)) % Math.max(1, prim.length);
+        targets = prim.slice(k0).concat(prim.slice(0, k0)).concat(targets.filter(function (t) { return t.backup; }));
+      }
+      // proxy_set_header, with the variables people use for client addresses
+      var setH = loc && all(loc.d, "proxy_set_header").length ? all(loc.d, "proxy_set_header") : all(srv.d, "proxy_set_header").length ? all(srv.d, "proxy_set_header") : all(conf.http.block, "proxy_set_header");
+      var upHeaders = Object.assign({}, req.headers);
+      setH.forEach(function (h) {
+        var v = h.args[1].replace(/\$proxy_add_x_forwarded_for/g, req.headers["x-forwarded-for"] ? req.headers["x-forwarded-for"] + ", " + client : client).replace(/\$remote_addr/g, client).replace(/\$host/g, hostHdr).replace(/\$scheme/g, req.scheme || "http").replace(/\$http_x_forwarded_for/g, req.headers["x-forwarded-for"] || "").replace(/\$request_uri/g, req.path);
+        if (v === "") delete upHeaders[h.args[0].toLowerCase()]; else upHeaders[h.args[0].toLowerCase()] = v;
+      });
+      for (var ti = 0; ti < targets.length; ti++) {
+        var tg = targets[ti], upIp = resolve(sys, tg.host), conn = upIp ? tcpConnect(sys, upIp, tg.port) : { refused: true };
+        if (!conn.self || !conn.proc) { errLog("error", "connect() failed (111: Connection refused) while connecting to upstream, upstream: \"http://" + tg.host + ":" + tg.port + upPath + "\""); continue; }
+        var up = handleBy(sys, conn.proc, Object.assign({}, req, { path: upPath, port: tg.port, localIp: upIp, headers: upHeaders, client: "127.0.0.1" }), "127.0.0.1");
+        res.status = up.status; res.body = up.body; res.headers = { "Content-Type": up.headers["Content-Type"] };
+        return finish();
+      }
+      if (group && targets.length) { res.status = 502; res.body = ngxErrPage(502, conf); errLog("error", "no live upstreams while connecting to upstream, upstream: \"http://" + u[1] + upPath + "\""); return finish(); }
+      return fail(502);
     }
     var rootD = get("root"), aliasD = loc && first(loc.d, "alias"), docroot = rootD ? rootD.args[0] : "/usr/share/nginx/html";
     var idx = get("index"), indexes = idx ? idx.args : ["index.html"];
@@ -814,7 +832,7 @@
     var r = routes[p];
     if (!r) return { status: 404, headers: { Server: "gunicorn", Date: httpDate(sys.now), Connection: "close", "Content-Type": "text/html; charset=utf-8" }, body: "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n" };
     var body = typeof r[1] === "function" ? r[1](sys, req) : r[1];
-    return { status: r[0], headers: { Server: "gunicorn", Date: httpDate(sys.now), Connection: "close", "Content-Type": "application/json" }, body: body };
+    return { status: r[0], headers: { Server: "gunicorn", Date: httpDate(sys.now), Connection: "close", "Content-Type": "application/json" }, body: body, delay: r[2] || 0 };
   }
   function pyHttpServer(sys, proc, req) {
     var dir = proc.cwd || "/", sess = wwwSess(sys, S.uname(sys, proc.uid)), p = decodeURIComponent(req.path.split("?")[0]), r = S.lookup(sess, dir.replace(/\/$/, "") + p);
