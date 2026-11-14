@@ -351,7 +351,9 @@
   N.tlsPick = tlsPick;
   function tlsConnect(sys, ip, port, sni, want) {
     if (selfTarget(sys, ip)) {
-      if (N.preTcp) { var pt0 = N.preTcp(sys, ip, port, "tcp"); if (pt0) return pt0; }
+      var home = sys;
+      if (N.preTcp) { var pt0 = N.preTcp(sys, ip, port, "tcp"); if (pt0 && pt0.err) return pt0; if (pt0 && pt0.target) home = pt0.target; }
+      if (home !== sys) return tlsConnect(home, ip, port, sni, want);
       var local = /^127\./.test(ip) ? ip : "10.20.0.15";
       var c = M2.tcpConnect(sys, local, port);
       if (c.refused) return { err: "refused" };
@@ -592,6 +594,7 @@
   var LISTEN_EXTRA = { "10.20.0.21": [22, 5432], "10.20.0.31": [22, 873], "10.20.5.10": [22, 9090], "172.16.50.10": [443], "203.0.113.90": [80, 443], "10.20.30.31": [22, 873], "10.20.20.2": [22, 443], "10.20.0.10": [22, 80, 443], "10.20.0.2": [53] };
   // One TCP connection's worth of HTTP: {status, headers, body} or {err: {code, msg}}
   function httpTo(sys, ip, port, req) {
+    if (N.preHttp) { var ph = N.preHttp(sys, ip, port, req); if (ph) { if (!ph.err) { ph.headers = ph.headers || {}; ph.headers["Content-Length"] = String(bytes(ph.body || "")); } return ph; } }
     if (selfTarget(sys, ip)) {
       var local = /^127\./.test(ip) ? ip : "10.20.0.15";
       var r = M2.httpRequest(sys, Object.assign({}, req, { resolveTo: local, port: port }));
@@ -639,7 +642,7 @@
         else if (/^--tlsv1(\.[0-3])?$/.test(x)) o.tlsMin = x === "--tlsv1" ? "TLSv1" : "TLSv1" + x.slice(7).replace(/^\.0$/, "");
         else if (x === "--tls-max") { var tm = a[++i] || ""; o.tlsMax = tm === "1.0" ? "TLSv1" : "TLSv" + tm; }
         else if (x === "--http1.1" || x === "--http1.0") o.http = "1.1"; else if (x === "--http2") o.http = "2"; else if (x === "--http3" || x === "--http3-only") o.http = "3";
-        else if (x === "--connect-timeout" || x === "--max-time" || x === "--retry" || x === "--cacert" || x === "--cert" || x === "--key") { if (x === "--cacert") o.cacert = a[i + 1]; if (x === "--cert") o.cert = a[i + 1]; if (x === "--max-time" || x === "--connect-timeout") o.maxTime = +a[i + 1]; i++; } else if (x === "--compressed") o.compressed = true; else if (x === "--no-progress-meter") o.noProgress = true;
+        else if (x === "--connect-timeout" || x === "--max-time" || x === "--retry" || x === "--cacert" || x === "--cert" || x === "--key") { if (x === "--cacert") o.cacert = a[i + 1]; if (x === "--cert") o.cert = a[i + 1]; if (x === "--key") o.key = a[i + 1]; if (x === "--max-time" || x === "--connect-timeout") o.maxTime = +a[i + 1]; i++; } else if (x === "--compressed") o.compressed = true; else if (x === "--no-progress-meter") o.noProgress = true;
         else if (x === "--help") { out(io, "Usage: curl [options...] <url>\n -d, --data <data>          HTTP POST data\n -f, --fail                 Fail fast with no output on HTTP errors\n -H, --header <header/@file> Pass custom header(s) to server\n -i, --include              Include protocol response headers in the output\n -I, --head                 Show document info only\n -k, --insecure             Allow insecure server connections\n -L, --location             Follow redirects\n -o, --output <file>        Write to file instead of stdout\n -s, --silent               Silent mode\n -v, --verbose              Make the operation more talkative\n -w, --write-out <format>   Use output FORMAT after completion\n     --http1.1 / --http2    Use HTTP 1.1 / try HTTP 2\n     --resolve <host:port:addr> Resolve the host+port to this address\n -4 / -6                    Resolve names to IPv4 / IPv6 addresses\n"); return null; }
         else { errl(io, "curl: option " + x + ": is unknown\ncurl: try 'curl --help' or 'curl --manual' for more information"); return { bad: 2 }; }
         continue;
@@ -731,6 +734,18 @@
       if (o.user) hdrs.authorization = "Basic " + b64enc(unescape(encodeURIComponent(o.user)));
       if (o.compressed) hdrs["accept-encoding"] = "deflate, gzip, br, zstd";
       var req = { scheme: cur.scheme, host: cur.host, port: cur.port, path: cur.path, method: method, headers: hdrs, body: o.data };
+      // a client certificate (mTLS): the key has to belong to the certificate
+      if (o.cert && cur.scheme === "https") {
+        var cct = S.readFile(sess, o.cert);
+        if (cct.error) return fail(58, "could not load PEM client certificate from " + o.cert + ", OpenSSL error error:80000002:system library::No such file or directory, (no key found, wrong pass phrase, or wrong file format?)");
+        if (N.pki) {
+          var kt = S.readFile(sess, o.key || o.cert), kk = kt.error ? null : N.pki.keyId(kt.content), cc = N.pki.parseCerts(cct.content)[0];
+          if (!cc) return fail(58, "could not load PEM client certificate from " + o.cert + ", OpenSSL error error:1608010C:STORE routines::unsupported, (no key found, wrong pass phrase, or wrong file format?)");
+          if (!kk) return fail(58, "unable to set private key file: '" + (o.key || o.cert) + "' type PEM");
+          if (cc.pk && cc.pk !== kk.kid) return fail(58, "unable to set private key file: '" + o.key + "' type PEM");
+        }
+        req.clientCert = cct.content;
+      }
       if (httpv === "2") verbose("* using HTTP/2\n* [HTTP/2] [1] OPENED stream for " + cur.scheme + "://" + cur.host + cur.path + "\n* [HTTP/2] [1] [:method: " + method + "]\n* [HTTP/2] [1] [:scheme: https]\n* [HTTP/2] [1] [:authority: " + hostHdr + "]\n* [HTTP/2] [1] [:path: " + cur.path + "]\n> " + method + " " + cur.path + " HTTP/2\n> Host: " + hostHdr + "\n> User-Agent: " + hdrs["user-agent"] + "\n> Accept: */*\n> ");
       else verbose("> " + method + " " + cur.path + " HTTP/1.1\n> Host: " + hostHdr + "\n> User-Agent: " + hdrs["user-agent"] + "\n> Accept: */*\n" + Object.keys(o.headers).filter(function (k) { return k !== "host" && k !== "user-agent"; }).map(function (k) { return "> " + k.replace(/(^|-)\w/g, function (s) { return s.toUpperCase(); }) + ": " + o.headers[k] + "\n"; }).join("") + "> ");
       res = httpTo(sys, ip, cur.port, req);

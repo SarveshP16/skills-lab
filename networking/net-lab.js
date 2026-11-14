@@ -82,6 +82,7 @@
         else if (id === "sw") { var n = nicState(sys); s = n.st === "bad" && n.layer === 1 ? { st: "bad", why: "no link to the switch" } : { st: n.st === "warn" ? "warn" : "ok", why: n.st === "warn" ? n.why : "port 14 up" }; }
         else if (id === "dns") s = dnsState(sys);
         else if (id === "site") s = siteState(sys);
+        else if (base.fn) s = base.fn(sys);
         else s = ipState(sys, base.ip);
       } catch (e) { s = { st: "unknown", why: String(e && e.message || e) }; }
       res[id] = Object.assign({ id: id, label: base.label, kind: base.kind, ip: id === "you" ? ((sys.nw.ifs[(s && s.dev) || "eth0"] || { addrs: [] }).addrs[0] || {}).ip || "no IP" : base.ip }, s);

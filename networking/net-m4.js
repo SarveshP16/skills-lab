@@ -151,7 +151,7 @@
     }
     var r = reachFrom(sys, ip, port);
     if (!r.ok) return { err: r.err === "netunreach" ? "netunreach" : r.err === "hostunreach" ? "hostunreach" : "timeout", r: r };
-    var fv = fwVerdict(T, src, port, proto, isV6(n), tip);
+    var fv = N.fwVerdict(T, src, port, proto, isV6(n), tip);
     if (fv === "drop") return { err: "timeout", r: r, filtered: true };
     if (fv === "reject") return { err: "refused", r: r, rejected: true };
     if (proto === "udp") return { ok: true, r: r, target: T, tip: tip };

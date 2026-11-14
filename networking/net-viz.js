@@ -11,8 +11,8 @@
   var SVGNS = "http://www.w3.org/2000/svg";
   var KEY = "sudolearn.netviz.v1";
   var OSI = [[7, "Application"], [6, "Presentation"], [5, "Session"], [4, "Transport"], [3, "Network"], [2, "Data link"], [1, "Physical"]];
-  var POS = { you: [70, 118], sw: [205, 118], gw: [372, 118], inet: [522, 118], dns: [150, 36], db: [250, 36], backup: [350, 36], stor: [446, 36], legacy: [150, 200], data: [262, 200], build: [372, 200], evil: [262, 200], bastion: [150, 200], scan: [470, 36], lis: [372, 200], lb: [150, 200], vpn: [262, 200], partner: [372, 200], mon: [470, 200], site: [522, 36] };
-  var LINKS = [["you", "sw"], ["sw", "gw"], ["gw", "inet"], ["sw", "dns"], ["sw", "db"], ["sw", "backup"], ["sw", "stor", "VLAN 30"], ["sw", "legacy"], ["sw", "data"], ["sw", "build"], ["sw", "evil"], ["sw", "bastion"], ["inet", "scan"], ["inet", "lis", "WireGuard"], ["sw", "lb"], ["sw", "vpn"], ["vpn", "partner", "VPN"], ["gw", "mon", "office"], ["inet", "site"]];
+  var POS = { you: [70, 118], sw: [205, 118], gw: [372, 118], inet: [522, 118], dns: [150, 36], db: [250, 36], backup: [350, 36], stor: [446, 36], legacy: [150, 200], data: [262, 200], build: [372, 200], evil: [262, 200], bastion: [150, 200], scan: [470, 36], lis: [372, 200], lb: [150, 200], vpn: [262, 200], partner: [372, 200], mon: [470, 200], site: [522, 36], vpc: [372, 200] };
+  var LINKS = [["you", "sw"], ["sw", "gw"], ["gw", "inet"], ["sw", "dns"], ["sw", "db"], ["sw", "backup"], ["sw", "stor", "VLAN 30"], ["sw", "legacy"], ["sw", "data"], ["sw", "build"], ["sw", "evil"], ["sw", "bastion"], ["inet", "scan"], ["inet", "lis", "WireGuard"], ["sw", "lb"], ["sw", "vpn"], ["vpn", "partner", "VPN"], ["gw", "mon", "office"], ["inet", "site"], ["inet", "vpc", "AWS"]];
   var BASE = ["you", "sw", "gw", "dns", "db", "inet"];
   var state = { src: null, lab: null, layers: [], pkts: [], pk: 0, view: "map", sys: null, anim: null, statuses: {} };
 
