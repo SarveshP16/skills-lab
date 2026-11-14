@@ -1,0 +1,104 @@
+/* sudo learn — Networking track: the network panel above the terminal (map, packet decoder, OSI strip). */
+:root { --l1: #94a3b8; --l2: #c084fc; --l3: #22d3ee; --l4: #4ade80; --l5: #fbbf24; --l6: #fb923c; --l7: #f472b6; }
+.crumb b.net { color: var(--cyan); }
+.crumb a { color: var(--muted); }
+
+/* the work column gets a third row for the panel */
+.net-mode.term-mode .work { grid-template-rows: auto auto minmax(0, 1fr); }
+.netviz { border-bottom: 1px solid var(--line-2); background: radial-gradient(600px 220px at 20% 0%, rgba(34, 211, 238, 0.06), transparent 70%), var(--bg-2); min-width: 0; }
+.nv-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); min-width: 0; }
+.nv-tabs { display: flex; gap: 2px; flex-shrink: 0; }
+.nv-tabs button { background: none; border: 1px solid transparent; color: var(--muted); font: 600 11.5px var(--font-sans); padding: 4px 9px; border-radius: 6px; cursor: pointer; }
+.nv-tabs button[aria-selected="true"] { color: var(--text); background: var(--panel-2); border-color: var(--line-2); }
+.nv-tabs button .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); margin-left: 5px; vertical-align: 1px; }
+.nv-tabs button .dot[hidden] { display: none; }
+.nv-cap { flex: 1; min-width: 0; font: 500 12px/1.3 var(--font-mono); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nv-cap b { color: var(--cyan); font-weight: 600; }
+.nv-cap .bad { color: var(--red); }
+.nv-cap .good { color: var(--green); }
+.nv-toggle { background: none; border: 1px solid var(--line-2); color: var(--muted); border-radius: 6px; font: 600 11px var(--font-sans); padding: 3px 8px; cursor: pointer; flex-shrink: 0; }
+.nv-toggle:hover, .nv-tabs button:hover { color: var(--text); }
+.netviz.collapsed .nv-body { display: none; }
+.netviz.collapsed .nv-head { border-bottom: 0; }
+
+.nv-body { display: grid; grid-template-columns: minmax(0, 1fr) 118px; height: 236px; min-height: 0; }
+.nv-view { min-width: 0; min-height: 0; position: relative; }
+.nv-view[hidden] { display: none; }
+.nv-map svg { width: 100%; height: 100%; display: block; }
+
+/* map */
+.nv-link { stroke: var(--line-2); stroke-width: 2.2; fill: none; transition: stroke 0.3s; }
+.nv-link.ok { stroke: rgba(74, 222, 128, 0.55); }
+.nv-link.warn { stroke: rgba(251, 191, 36, 0.75); stroke-dasharray: 6 4; }
+.nv-link.bad { stroke: rgba(248, 113, 113, 0.75); stroke-dasharray: 3 5; }
+.nv-link.vlan { stroke-dasharray: 2 4; }
+.nv-link-label { font: 600 8.5px var(--font-mono); fill: var(--dim); }
+.nv-node rect.box { fill: var(--panel); stroke: var(--line-2); stroke-width: 1.4; transition: stroke 0.3s, fill 0.3s; }
+.nv-node.ok rect.box { stroke: rgba(74, 222, 128, 0.7); }
+.nv-node.warn rect.box { stroke: var(--amber); }
+.nv-node.bad rect.box { stroke: var(--red); fill: rgba(248, 113, 113, 0.07); }
+.nv-node.me rect.box { fill: var(--panel-2); stroke-width: 2; }
+.nv-node .nm { font: 700 10px var(--font-mono); fill: var(--text); }
+.nv-node .ip { font: 500 8.5px var(--font-mono); fill: var(--muted); }
+.nv-node .ico { stroke: var(--cyan); fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.nv-node .st { stroke: var(--bg-2); stroke-width: 1.5; }
+.nv-node.ok .st { fill: var(--green); }
+.nv-node.warn .st { fill: var(--amber); }
+.nv-node.bad .st { fill: var(--red); }
+.nv-node.unknown .st { fill: var(--dim); }
+.nv-node { cursor: default; }
+.nv-node.pulse rect.box { animation: nvPulse 0.9s ease-out 1; }
+@keyframes nvPulse { 0% { stroke-width: 4; } 100% { stroke-width: 1.4; } }
+.nv-pk { fill: var(--cyan); filter: drop-shadow(0 0 4px rgba(34, 211, 238, 0.9)); }
+.nv-pk.back { fill: var(--green); filter: drop-shadow(0 0 4px rgba(74, 222, 128, 0.9)); }
+.nv-x { stroke: var(--red); stroke-width: 3; stroke-linecap: round; }
+.nv-legend { position: absolute; left: 10px; bottom: 6px; display: flex; gap: 10px; font: 500 10px var(--font-mono); color: var(--dim); pointer-events: none; }
+.nv-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: 0; }
+.nv-tip { position: absolute; z-index: 5; max-width: 260px; background: var(--panel-3); border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 9px; font: 500 11.5px/1.4 var(--font-sans); color: var(--text-2); pointer-events: none; box-shadow: var(--shadow); }
+.nv-tip b { font-family: var(--font-mono); color: var(--text); }
+
+/* packet decoder */
+.nv-pkt { overflow-y: auto; padding: 8px 10px 10px; }
+.pk-empty { color: var(--muted); font-size: 13px; padding: 18px 8px; }
+.pk-empty code { font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--text); }
+.pk-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pk-nav button { background: var(--panel-2); border: 1px solid var(--line-2); color: var(--text); border-radius: 5px; width: 24px; height: 22px; cursor: pointer; font-size: 13px; line-height: 1; }
+.pk-nav button:disabled { opacity: 0.35; cursor: default; }
+.pk-nav .n { font: 600 11px var(--font-mono); color: var(--muted); white-space: nowrap; }
+.pk-nav .sum { font: 500 11px var(--font-mono); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pk-doll { display: flex; flex-direction: column; }
+.lay { border: 1.5px solid var(--c); border-radius: 8px; padding: 5px 7px 7px; background: color-mix(in srgb, var(--c) 6%, transparent); margin-top: 4px; }
+.lay > .lh { display: flex; align-items: baseline; gap: 6px; font: 700 10.5px var(--font-mono); color: var(--c); margin-bottom: 3px; }
+.lay > .lh small { font-weight: 500; color: var(--muted); }
+.lay .fl { display: flex; flex-wrap: wrap; gap: 3px 10px; font: 500 11px var(--font-mono); color: var(--text-2); }
+.lay .fl span em { font-style: normal; color: var(--dim); margin-right: 4px; }
+.lay.on { background: color-mix(in srgb, var(--c) 14%, transparent); }
+.lay.l1, .osi-row.l1 { --c: var(--l1); } .lay.l2, .osi-row.l2 { --c: var(--l2); } .lay.l3, .osi-row.l3 { --c: var(--l3); } .lay.l4, .osi-row.l4 { --c: var(--l4); }
+.lay.l5, .osi-row.l5 { --c: var(--l5); } .lay.l6, .osi-row.l6 { --c: var(--l6); } .lay.l7, .osi-row.l7 { --c: var(--l7); }
+.pk-hex { margin-top: 8px; font: 500 11px/1.55 var(--font-mono); display: flex; flex-wrap: wrap; gap: 0 4px; }
+.pk-hex span { color: var(--c, var(--dim)); padding: 0 1px; border-radius: 2px; }
+.pk-hex span.l2 { --c: var(--l2); } .pk-hex span.l3 { --c: var(--l3); } .pk-hex span.l4 { --c: var(--l4); } .pk-hex span.l6 { --c: var(--l6); } .pk-hex span.l7 { --c: var(--l7); }
+.pk-hex span.hl { background: color-mix(in srgb, var(--c) 25%, transparent); color: var(--text); }
+.pk-hexh { margin-top: 8px; font: 600 10px var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* OSI strip */
+.nv-osi { border-left: 1px solid var(--line); padding: 6px 6px 4px; display: flex; flex-direction: column; gap: 3px; min-height: 0; }
+.nv-osi h5 { margin: 0 0 2px; font: 600 9.5px var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.1em; }
+.osi-row { flex: 1; display: flex; align-items: center; gap: 6px; border-radius: 5px; padding: 0 6px; border: 1px solid transparent; font: 600 10.5px var(--font-sans); color: var(--dim); min-height: 0; transition: background 0.3s, color 0.3s; }
+.osi-row b { font: 700 10px var(--font-mono); width: 16px; color: inherit; }
+.osi-row.inlab { border-color: color-mix(in srgb, var(--c) 45%, transparent); color: var(--text-2); }
+.osi-row.inlab b { color: var(--c); }
+.osi-row.hit { background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--text); animation: nvHit 1.2s ease-out 1; }
+@keyframes nvHit { 0% { background: color-mix(in srgb, var(--c) 60%, transparent); } }
+
+.pill.layer { color: var(--cyan); border-color: rgba(34, 211, 238, 0.35); background: rgba(34, 211, 238, 0.08); }
+
+@media (max-width: 820px) {
+  .nv-body { height: auto; grid-template-columns: 1fr; }
+  .nv-map { height: 230px; }
+  .nv-pkt { max-height: 340px; }
+  .nv-osi { border-left: 0; border-top: 1px solid var(--line); flex-direction: row; flex-wrap: wrap; }
+  .nv-osi h5 { width: 100%; }
+  .osi-row { flex: 0 0 auto; padding: 3px 6px; }
+  .nv-cap { white-space: normal; }
+}

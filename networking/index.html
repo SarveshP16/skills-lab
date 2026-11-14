@@ -3,261 +3,115 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Networking outline · sudo learn</title>
-<meta name="description" content="The planned Networking track: 5 modules and 48 hands-on labs, from the OSI layers and ports to packet capture, attacks, defence and cloud networks.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e13'/%3E%3Cpath d='M7 10l6 6-6 6' stroke='%234ade80' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='16' y='20' width='9' height='3' rx='1' fill='%234ade80'/%3E%3C/svg%3E">
+<title>Networking · sudo learn</title>
+<meta name="description" content="Networking labs for beginners heading toward DevSecOps: climb the OSI layers on a simulated company network, with a live network map and a packet decoder beside the terminal.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e13'/%3E%3Cpath d='M7 10l6 6-6 6' stroke='%2322d3ee' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='16' y='20' width='9' height='3' rx='1' fill='%2322d3ee'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="../assets/css/base.css">
-<style>
-  body { min-height: 100vh; background: radial-gradient(1000px 460px at 10% -10%, rgba(34,211,238,0.07), transparent 60%), var(--bg); }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
-  header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; gap: 12px; }
-  header.top .logo { font-size: 18px; }
-  .crumb { font: 500 12.5px var(--font-mono); color: var(--muted); }
-
-  .intro { padding: 26px 0 30px; }
-  .intro .kicker { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-  .pill.cyan { color: var(--cyan); border-color: rgba(34,211,238,0.35); background: rgba(34,211,238,0.08); }
-  .intro h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(34px, 5.5vw, 54px); line-height: 1; letter-spacing: -0.03em; margin: 0 0 14px; }
-  .intro h1 span { color: var(--cyan); }
-  .intro p { color: var(--text-2); font-size: 16px; max-width: 40em; margin: 0 0 10px; }
-  .intro p.note { color: var(--muted); font-size: 14px; }
-
-  .facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 18px 0 40px; }
-  .facts > div { background: var(--panel); padding: 14px 16px; }
-  .facts small { display: block; font: 500 11px var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
-  .facts b { font: 700 20px var(--font-mono); }
-
-  h2.sec { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.02em; margin: 0 0 6px; }
-  p.sub { color: var(--muted); margin: 0 0 18px; }
-  section { margin-bottom: 46px; }
-
-  /* OSI stack */
-  .osi { display: grid; gap: 4px; }
-  .osi .ly { display: grid; grid-template-columns: 44px 1fr; align-items: stretch; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .osi .n { display: grid; place-items: center; font: 700 14px var(--font-mono); color: var(--cyan); background: rgba(34,211,238,0.08); border-right: 1px solid var(--line); }
-  .osi .body { padding: 9px 14px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
-  .osi .body b { font-family: var(--font-display); font-size: 16px; min-width: 7.5em; }
-  .osi .body .unit { font: 500 11.5px var(--font-mono); color: var(--amber); min-width: 6.5em; }
-  .osi .body .ex { color: var(--text-2); font-size: 13.5px; flex: 1; min-width: 14em; }
-  .osi .tcpip { font: 500 11px var(--font-mono); color: var(--dim); }
-
-  /* Modules */
-  .mod { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
-  .mod > header { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .mod .mn { font: 700 13px var(--font-mono); width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: rgba(34,211,238,0.1); color: var(--cyan); border: 1px solid rgba(34,211,238,0.35); flex-shrink: 0; }
-  .mod h3 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 20px; flex: 1; min-width: 10em; }
-  .mod .cnt { font: 500 12px var(--font-mono); color: var(--muted); }
-  .mod .goal { margin: 0; padding: 12px 18px 4px; color: var(--text-2); font-size: 14px; }
-  .labs { list-style: none; margin: 0; padding: 6px 8px 10px; }
-  .labs li { display: grid; grid-template-columns: 76px 1fr auto; gap: 4px 12px; align-items: baseline; padding: 9px 10px; border-radius: 8px; }
-  .labs li:hover { background: var(--panel-2); }
-  .labs .id { font: 600 12px var(--font-mono); color: var(--dim); }
-  .labs .t b { font-weight: 600; color: var(--text); }
-  .labs .t span { display: block; color: var(--muted); font-size: 13.5px; }
-  .labs .ly { font: 600 10.5px/1 var(--font-mono); color: var(--cyan); border: 1px solid rgba(34,211,238,0.3); border-radius: 999px; padding: 4px 7px; white-space: nowrap; }
-  .labs li.cap .id { color: var(--amber); }
-  .labs li.cap .t b::before { content: "★ "; color: var(--amber); }
-  .labs li.cap .ly { color: var(--amber); border-color: rgba(251,191,36,0.35); }
-
-  /* Ports */
-  .ports { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .ptab { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .ptab h4 { margin: 0; padding: 12px 16px; font-family: var(--font-display); font-size: 17px; border-bottom: 1px solid var(--line); }
-  .ptab table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  .ptab td { padding: 6px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .ptab tr:last-child td { border-bottom: 0; }
-  .ptab td:first-child { font: 600 12.5px var(--font-mono); color: var(--cyan); white-space: nowrap; width: 1%; }
-  .ptab td small { color: var(--dim); font-family: var(--font-mono); font-size: 11px; }
-  .pairs { margin-top: 14px; }
-  .pairs td:first-child { color: var(--red); }
-  .pairs td:nth-child(2) { color: var(--dim); width: 1%; padding: 6px 0; }
-  .pairs td:nth-child(3) { font: 600 12.5px var(--font-mono); color: var(--green); white-space: nowrap; width: 1%; }
-
-  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .how > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-  .how b { display: block; font-family: var(--font-display); font-size: 16px; margin-bottom: 4px; }
-  .how p { margin: 0; color: var(--text-2); font-size: 13.5px; }
-
-  footer { border-top: 1px solid var(--line); padding: 22px 0 40px; color: var(--dim); font-size: 13px; }
-
-  @media (max-width: 760px) {
-    .facts { grid-template-columns: 1fr 1fr; }
-    .ports, .how { grid-template-columns: 1fr; }
-  }
-  @media (max-width: 560px) {
-    .wrap { padding: 0 16px; }
-    .labs li { grid-template-columns: 1fr auto; }
-    .labs .id { grid-column: 1 / -1; }
-    .osi .body b, .osi .body .unit { min-width: 0; }
-  }
-</style>
+<link rel="stylesheet" href="../assets/css/lab.css">
+<link rel="stylesheet" href="net.css">
 </head>
-<body>
-<div class="wrap">
-  <header class="top">
-    <a class="logo" href="../"><span class="sig">$</span>&nbsp;sudo learn<span class="cur"></span></a>
-    <a class="crumb" href="../#path">← all tracks</a>
-  </header>
+<body style="--prompt: ''">
+<header class="topbar">
+  <button class="iconbtn" id="menuBtn" aria-label="Show labs" aria-expanded="false">☰</button>
+  <a class="logo" href="../"><span class="sig">$</span>&nbsp;sudo learn<span class="cur"></span></a>
+  <span class="crumb">/ <b class="net">networking</b> · <a href="outline.html">the full plan</a></span>
+  <span class="spacer"></span>
+  <span class="xp" id="xpBox"></span>
+</header>
 
-  <div class="intro">
-    <div class="kicker"><span class="pill cyan">track 05</span><span class="pill amber">outline · labs not built yet</span></div>
-    <h1>Networking: <span>why is the site down?</span></h1>
-    <p>Learn how data really gets from one machine to another, layer by layer. Then capture and read the traffic, catch attacks on the wire, lock a network down, and do it all again in the cloud.</p>
-    <p class="note">This is the plan for the track. The labs will run in the same simulated terminal as the Linux track, on a network of Kestrel Cloud machines, with a diagram of the network beside the terminal.</p>
-  </div>
+<div class="main">
+  <nav class="side" id="side" aria-label="Labs"></nav>
+  <div class="scrim" id="scrim"></div>
 
-  <div class="facts">
-    <div><small>Modules</small><b>5</b></div>
-    <div><small>Labs</small><b>48</b></div>
-    <div><small>Practice drills</small><b>3 per lab</b></div>
-    <div><small>Ports covered</small><b>~29</b></div>
-  </div>
-
-  <section>
-    <h2 class="sec">The OSI model</h2>
-    <p class="sub">Module 1 climbs these layers from the bottom. Every lab in the track is tagged with the layer it works on.</p>
-    <div class="osi" id="osi"></div>
+  <section class="brief" id="brief" aria-label="Ticket">
+    <div class="ticket-head">
+      <div class="meta"><span class="pill amber" id="tTicket"></span><span class="topic" id="tTopic"></span></div>
+      <h1 id="tTitle"></h1>
+      <div class="from" id="tFrom"></div>
+      <div class="story" id="tStory"></div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabLearn" aria-selected="true" data-tab="learn">1 · Learn</button>
+      <button role="tab" id="tabTasks" aria-selected="false" data-tab="tasks">2 · Tasks <span class="badge" id="taskBadge"></span></button>
+    </div>
+    <div class="tabpanel" id="panelLearn" role="tabpanel"></div>
+    <div class="tabpanel" id="panelTasks" role="tabpanel" hidden></div>
   </section>
 
-  <section>
-    <h2 class="sec">Modules</h2>
-    <p class="sub">Each module ends with a capstone (★): a bigger ticket with no hints.</p>
-    <div id="mods"></div>
-  </section>
-
-  <section>
-    <h2 class="sec">Ports you'll learn</h2>
-    <p class="sub">Taught in Module 2, attacked in Module 3, locked down in Module 4. A ports card will be one click away in every lab.</p>
-    <div class="ports">
-      <div class="ptab"><h4>The top 15</h4><table id="top15"></table></div>
-      <div>
-        <div class="ptab"><h4>Infrastructure ports</h4><table id="infra"></table></div>
-        <div class="ptab pairs"><h4>Plain text → encrypted</h4><table id="pairs"></table></div>
-      </div>
+  <section class="work" aria-label="Terminal">
+    <div class="toolbar">
+      <span class="fname" id="fname">terminal</span>
+      <span class="status" id="pyStatus"><i></i><span>Starting kc-web-01…</span></span>
+      <span class="spacer"></span>
+      <button class="btn small ghost" id="resetCode" title="Start over on a fresh copy of the server and its network">Reset machine</button>
+      <button class="btn small primary" id="runBtn" disabled>▶ Run</button>
+    </div>
+    <div class="editor-wrap"><textarea id="code" aria-label="unused"></textarea></div>
+    <div class="io">
+    <div class="stdin" id="stdinBox" hidden><label for="stdin">Input</label><textarea id="stdin" rows="2" spellcheck="false"></textarea></div>
+    <div class="stdin" id="argsBox" hidden><label for="args">Arguments</label><div class="argrow"><span class="argcmd"><b id="argScript"></b></span><input id="args" spellcheck="false" autocomplete="off"></div></div>
+    <div class="stdin" id="envBox" hidden><label for="env">Environment</label><textarea id="env" rows="2" spellcheck="false"></textarea></div>
+    </div>
+    <div class="console">
+      <div class="console-head"><span>kc-web-01 · console · bash</span><button class="link" id="clearBtn">clear screen</button></div>
+      <div class="out" id="out" aria-live="polite"></div>
+      <form class="repl" id="replForm" autocomplete="off">
+        <span class="ps">dev@kc-web-01:~$</span>
+        <input id="repl" spellcheck="false" autocapitalize="off" autocorrect="off" placeholder="type a command, e.g. ip a" aria-label="Terminal input">
+      </form>
     </div>
   </section>
-
-  <section>
-    <h2 class="sec">How the labs will work</h2>
-    <div class="how">
-      <div><b>A real terminal</b><p>Type <code>ip</code>, <code>dig</code>, <code>curl</code>, <code>tcpdump</code>, <code>nmap</code>, <code>ufw</code>, <code>wg</code> and a small <code>aws</code> CLI on simulated machines. Tasks tick as you go.</p></div>
-      <div><b>A network diagram</b><p>See the machines, subnets and links you're working on. Broken links turn green as you fix them, and an OSI view highlights the lab's layer.</p></div>
-      <div><b>Safe to break</b><p>Scans, floods and spoofing only ever hit Kestrel's own simulated network, so you can see attacks happen and learn to stop them.</p></div>
-    </div>
-  </section>
-
-  <footer>Networking is the fifth track. It will open after the Git &amp; GitHub and Linux tracks are finished.</footer>
 </div>
 
+<button class="jump" id="jumpBtn" type="button">Terminal ↓</button>
+
+<div class="modal" id="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="stamp" id="mStamp">TICKET CLOSED</div>
+    <h2 id="mTitle"></h2>
+    <div class="xpline" id="mXP"></div>
+    <div class="debrief" id="mDebrief"></div>
+    <div class="quiz" id="mQuiz"></div>
+    <div class="real" id="mReal"></div>
+    <div class="actions">
+      <button class="btn ghost" id="mStay">Stay here</button>
+      <button class="btn primary" id="mNext">Next ticket →</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/runmode/runmode.min.js"></script>
+<script src="../assets/js/progress.js"></script>
+<script src="../linux/sh-engine.js"></script>
+<script src="../linux/sh-cmds.js"></script>
+<script src="../linux/sh-sys.js"></script>
+<script src="../linux/sh-net.js"></script>
+<script src="../linux/sh-script.js"></script>
+<script src="../linux/sh-sec.js"></script>
+<script src="../linux/sh-lab.js"></script>
+<script src="net-core.js"></script>
+<script src="net-apps.js"></script>
+<script src="net-pcap.js"></script>
+<script src="net-lab.js"></script>
+<script src="labs.js"></script>
+<script src="drills.js"></script>
+<script src="net-viz.js"></script>
 <script>
-(function () {
-  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-
-  var OSI = [
-    [7, "Application", "data", "What the program speaks: HTTP, DNS, SSH, SMTP", "TCP/IP: application"],
-    [6, "Presentation", "data", "How data is encoded and encrypted: TLS, gzip, base64, UTF-8", "TCP/IP: application"],
-    [5, "Session", "data", "Keeping a conversation going: TLS sessions, logins", "TCP/IP: application"],
-    [4, "Transport", "segment", "Ports, TCP and UDP: which program gets the data", "TCP/IP: transport"],
-    [3, "Network", "packet", "IP addresses, subnets and routing between networks", "TCP/IP: internet"],
-    [2, "Data link", "frame", "MAC addresses, ARP and switches on one local network", "TCP/IP: link"],
-    [1, "Physical", "bits", "Cables, Wi-Fi, link lights, speed and duplex", "TCP/IP: link"]
-  ];
-  document.getElementById("osi").innerHTML = OSI.map(function (l) {
-    return '<div class="ly"><span class="n">L' + l[0] + '</span><div class="body"><b>' + l[1] + '</b><span class="unit">' + l[2] +
-      '</span><span class="ex">' + esc(l[3]) + '</span><span class="tcpip">' + l[4] + '</span></div></div>';
-  }).join("");
-
-  // [id, title, layer, what you do, capstone]
-  var MODS = [
-    { n: 1, title: "Up the OSI stack", goal: "One layer at a time, from the cable to the web page. Learn what each layer does and what breaks there.", labs: [
-      ["101", "Layers & encapsulation", "L1–7", "OSI vs TCP/IP. Take one captured packet apart, header by header."],
-      ["102", "Layer 1: Physical", "L1", "Link up or down, NO-CARRIER, speed and duplex with ethtool."],
-      ["103", "Layer 2: Data link", "L2", "MAC addresses, ARP, ip neigh, VLANs, a duplicate IP."],
-      ["104", "Addresses & subnets", "L3", "CIDR, ipcalc, network and broadcast addresses. Fix a wrong netmask."],
-      ["105", "IPv6", "L3", "Link-local addresses, SLAAC, dual-stack machines."],
-      ["106", "Routing & NAT", "L3", "ip route, the default gateway, traceroute and TTL, private vs public addresses. Plus a real BGP hijack story."],
-      ["107", "TCP & UDP", "L4", "ss and nc, connection states, \"refused\" vs \"timed out\", 0.0.0.0 vs 127.0.0.1."],
-      ["108", "TLS & encodings", "L5–6", "Sessions, certificates, SNI, how Let's Encrypt issues certificates, gzip, base64, character sets."],
-      ["109", "DNS", "L7", "dig and record types, resolv.conf, /etc/hosts, TTLs, +trace."],
-      ["110", "HTTP by hand", "L7", "curl -v, status codes, headers, a raw request typed into nc, HTTP/2 and HTTP/3."],
-      ["111", "Why is the site down?", "L1–7", "Faults on several layers. Work up from the bottom, fix each one and name its layer.", true]
-    ] },
-    { n: 2, title: "Ports & traffic", goal: "Know the ports by heart, then capture the traffic and read it.", labs: [
-      ["201", "The top 15 ports", "L4", "/etc/services, ss -tulpn, banners with nc, services on unusual ports, the UDP ones."],
-      ["202", "Infrastructure ports & secure pairs", "L4–7", "Databases, caches and management APIs, and the encrypted version of each plain-text port."],
-      ["203", "tcpdump basics", "L2–4", "Interfaces, capture filters, -n, saving to a file."],
-      ["204", "The TCP handshake", "L4", "SYN, SYN-ACK, ACK and FIN. A reset vs a silently dropped packet."],
-      ["205", "Reading captures", "L2–7", "tcpdump -r, tshark fields, following one conversation."],
-      ["206", "ICMP & MTU", "L3", "What ping really sends, unreachable messages, MTU black holes."],
-      ["207", "DNS & DHCP on the wire", "L7", "Lookups over UDP 53, NXDOMAIN, how a machine gets its address."],
-      ["208", "Slow, not down", "L3–7", "Latency, packet loss, mtr, curl -w timings."],
-      ["209", "Proxies & load balancers", "L4–7", "nginx upstreams, L4 vs L7 balancing, X-Forwarded-For, health checks."],
-      ["210", "The mystery capture", "L2–7", "Identify every connection in a capture: who, which port, which protocol, and why.", true]
-    ] },
-    { n: 3, title: "Attacks & detection", goal: "See attacks happen on Kestrel's own network, then learn to spot them.", labs: [
-      ["301", "Clear text on the wire", "L7", "Capture an HTTP login and a Telnet session, then compare HTTPS and SSH."],
-      ["302", "Scans & brute force", "L4–7", "Spot them in captures and logs, then ban the attacker with fail2ban."],
-      ["303", "Man in the middle on the LAN", "L2", "ARP spoofing and rogue DHCP servers, and how switches defend."],
-      ["304", "DNS spoofing & cache poisoning", "L7", "Fake answers, and how to tell them from real ones."],
-      ["305", "Floods & DoS", "L3–4", "SYN floods, SYN cookies, rate limits."],
-      ["306", "Suricata IDS", "L3–7", "Write a detection rule and read the alerts."],
-      ["307", "Zeek logs", "L3–7", "conn.log, dns.log and http.log: hunt through a day of traffic."],
-      ["308", "Reconstruct an intrusion", "L2–7", "Work out what an attacker did from a capture and the logs.", true]
-    ] },
-    { n: 4, title: "Defending the network", goal: "Find what's exposed, close it, and prove it's closed.", labs: [
-      ["401", "Scan your own servers", "L3–7", "nmap: open, closed and filtered ports, service versions. Only hosts in scope."],
-      ["402", "Dangerous open ports", "L4–7", "Telnet, FTP, SMB, RDP, MySQL, Redis, MongoDB, Elasticsearch, the Docker API, SNMP \"public\", an open Kubernetes API."],
-      ["403", "ufw", "L3–4", "Deny by default, allow only what you need."],
-      ["404", "nftables", "L3–4", "Tables, chains, rule order, counters, logging, and IPv6 rules."],
-      ["405", "Segmentation", "L3", "Web, app and database subnets, and which tier may talk to which."],
-      ["406", "Bastion hosts", "L7", "ProxyJump, key-only SSH, AllowUsers."],
-      ["407", "WireGuard VPN", "L3", "Keys, peers, AllowedIPs."],
-      ["408", "HTTPS done right", "L5–7", "Redirect to HTTPS, HSTS, modern TLS only."],
-      ["409", "DNS & email security", "L7", "SPF, DKIM, DMARC, DNSSEC, DNS over HTTPS, subdomain takeover."],
-      ["410", "Lock down Kestrel's network", "L1–7", "Scan, fix, then scan again to prove it.", true]
-    ] },
-    { n: 5, title: "Cloud networks & DevSecOps", goal: "The same ideas in the cloud, with a simulated aws CLI, plus network rules written as code.", labs: [
-      ["501", "VPCs", "L3", "Public and private subnets, route tables, internet and NAT gateways."],
-      ["502", "Security groups vs network ACLs", "L3–4", "Stateful vs stateless rules, and where each one applies."],
-      ["503", "Cloud load balancers & DNS", "L4–7", "Target health checks and DNS records."],
-      ["504", "Docker networking", "L3–4", "Bridge networks, publishing ports with -p, and how it slips past ufw."],
-      ["505", "VPC flow logs", "L3–4", "Spot scans and data leaving the network."],
-      ["506", "Zero trust & mTLS", "L5–7", "Services prove who they are to each other with certificates."],
-      ["507", "Egress control, WAF & CDN", "L3–7", "Block unwanted outbound traffic. What a WAF can and can't stop."],
-      ["508", "Network rules as code", "L3–4", "Review Terraform security groups and flag 0.0.0.0/0."],
-      ["509", "Contain a compromised instance", "L1–7", "Isolate the machine, find what it talked to, close the hole.", true]
-    ] }
-  ];
-  document.getElementById("mods").innerHTML = MODS.map(function (m) {
-    return '<article class="mod"><header><span class="mn">M' + m.n + '</span><h3>' + esc(m.title) + '</h3><span class="cnt">' + m.labs.length + ' labs</span></header>' +
-      '<p class="goal">' + esc(m.goal) + '</p><ul class="labs">' + m.labs.map(function (l) {
-        return '<li' + (l[4] ? ' class="cap"' : '') + '><span class="id">NET-' + l[0] + '</span><span class="t"><b>' + esc(l[1]) + '</b><span>' + esc(l[3]) +
-          '</span></span><span class="ly">' + l[2] + '</span></li>';
-      }).join("") + '</ul></article>';
-  }).join("");
-
-  function rows(id, list) {
-    document.getElementById(id).innerHTML = list.map(function (r) { return "<tr>" + r.map(function (c) { return "<td>" + c + "</td>"; }).join("") + "</tr>"; }).join("");
-  }
-  rows("top15", [
-    ["20/21", "FTP <small>file transfer, clear text</small>"], ["22", "SSH <small>remote login, SFTP</small>"], ["23", "Telnet <small>clear-text login</small>"],
-    ["25", "SMTP <small>mail between servers</small>"], ["53", "DNS <small>UDP and TCP</small>"], ["67/68", "DHCP <small>UDP</small>"],
-    ["80", "HTTP"], ["110", "POP3 <small>fetch mail</small>"], ["123", "NTP <small>time, UDP</small>"], ["143", "IMAP <small>mailboxes</small>"],
-    ["443", "HTTPS <small>also HTTP/3 over UDP</small>"], ["445", "SMB <small>Windows file sharing</small>"], ["3306", "MySQL"],
-    ["3389", "RDP <small>Windows remote desktop</small>"], ["5432", "PostgreSQL"]
-  ]);
-  rows("infra", [
-    ["161", "SNMP <small>device monitoring, UDP</small>"], ["6379", "Redis <small>cache</small>"], ["9200", "Elasticsearch"],
-    ["27017", "MongoDB"], ["6443", "Kubernetes API"]
-  ]);
-  rows("pairs", [
-    ["80", "→", "443", "web"], ["8080", "→", "8443", "app servers"], ["23, 21", "→", "22", "SSH and SFTP"], ["25", "→", "587", "sending mail"],
-    ["110", "→", "995", "POP3"], ["143", "→", "993", "IMAP"], ["389", "→", "636", "LDAP"], ["2375", "→", "2376", "Docker API"]
-  ]);
-})();
+  window.LAB_CONFIG = {
+    track: "networking", data: window.NET_TRACK, mode: "shell", runMode: "shell", terminal: true, editor: true,
+    prompt: "dev@kc-web-01:~$",
+    file: "terminal", drillFile: "terminal", cmd: "bash", lang: "Bash",
+    runner: NetLab.runner,
+    onLab: NetViz.onLab, onResult: NetViz.onResult,
+    isCode: /^[a-z~.\/][\w.\/~-]*( |$)|\n/
+  };
 </script>
+<script src="../assets/js/lab-app.js"></script>
 </body>
 </html>

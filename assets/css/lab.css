@@ -166,6 +166,7 @@ pre.ex .try:hover { border-color: var(--green); }
 .cm-s-default .cm-atom { color: #ff9cac; }
 .cm-s-default .cm-property { color: #82aaff; }
 .cm-s-default .cm-meta { color: #ffcb6b; }
+.cm-s-default .cm-attribute { color: #89ddff; }
 
 /* Completion modal */
 .modal { position: fixed; inset: 0; background: rgba(3,6,10,.72); backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 50; padding: 16px; }

@@ -22,6 +22,7 @@
       var shell = S.activeShell(sess);
       var e = { cmd: line, prompt: S.prompt(shell), cwdBefore: shell.cwd, userBefore: shell.user };
       var res;
+      sess.sys.cmdIndex = entries.length;   // lets simulators tag what each command did (the Networking diagram)
       if (sess.sys.lockedOut) { e.locked = true; res = { code: 255, lines: [{ text: "ssh: connect to host kc-web-01 port 22: Connection timed out", cls: "err" }, { text: "(You're locked out: the firewall now blocks SSH. Click Reset machine to start the lab's server again.)", cls: "sys" }] }; }
       else if (/^@edit!? /.test(line)) { res = editLine(sess, shell, line, e); }
       else try { res = S.runLine(sess, line); }
@@ -275,7 +276,7 @@
     var r = makeCtx(msg.code, opts, run);
     var results = runChecks(msg.checks || [], r);
     var last = run.entries[run.entries.length - 1];
-    return { parts: parts, results: results, prompt: S.prompt(S.activeShell(run.sess)), clear: cleared, exit: { code: last ? last.exit : 0, exited: false }, count: run.entries.length };
+    return { parts: parts, results: results, prompt: S.prompt(S.activeShell(run.sess)), clear: cleared, exit: { code: last ? last.exit : 0, exited: false }, count: run.entries.length, sys: run.sess.sys };
   }
 
   var runner = {

@@ -33,7 +33,7 @@
     { id: "git", name: "Git & GitHub", path: "git/", status: "open", color: "#f05133", labs: 36,
       blurb: "Commit, branch and merge; collaborate through pull requests; automate with GitHub Actions; and keep secrets, dependencies and pipelines safe.",
       topics: ["Commits", "Pull requests", "Actions", "Git security"] },
-    { id: "networking", name: "Networking", path: "networking/", status: "outline", color: "#22d3ee", labs: 48,
+    { id: "networking", name: "Networking", path: "networking/", status: "open", color: "#22d3ee", labs: 48,
       blurb: "Climb the OSI layers, learn the ports that matter, read captured traffic, catch attacks and lock down networks, on-prem and in the cloud.",
       topics: ["OSI layers", "Ports", "Packet capture", "Attacks & defence", "Cloud networks"] },
     { id: "devops", name: "DevOps", path: "devops/", status: "outline", color: "#a78bfa", labs: 49,

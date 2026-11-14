@@ -802,6 +802,7 @@
     var d = state.drill, lab = state.lab;
     print("# " + (d ? "Drill: " + d.title : lab.ticket + " · " + lab.title) + ". Type commands at the prompt below; your tasks are checked after each one. Tab completes names; ↑ recalls commands.", "sys");
     setPrompt(CFG.prompt || "dev@kc-web-01:~$");
+    if (CFG.onLab) CFG.onLab(d || lab, lab, d, !termHist.trim());
     if (!termHist.trim()) return;
     print("# Your machine was restored from the " + termCount() + " command" + (termCount() === 1 ? "" : "s") + " you typed (Reset machine starts over).", "sys");
     termCall(0, true);
@@ -818,6 +819,7 @@
       (res.parts || []).forEach(function (pt) { print(pt.text, pt.cls); });
       setPrompt(res.prompt);
       if (state.drill !== d || state.lab !== lab) return;
+      if (CFG.onResult) CFG.onResult(res, src, lab, d);
       if (d) termAfterDrill(res.results || [], quiet);
       else termAfterRun(res.results || [], quiet);
     });
