@@ -36,7 +36,7 @@
     { id: "networking", name: "Networking", path: "networking/", status: "open", color: "#22d3ee", labs: 48,
       blurb: "Climb the OSI layers, learn the ports that matter, read captured traffic, catch attacks and lock down networks, on-prem and in the cloud.",
       topics: ["OSI layers", "Ports", "Packet capture", "Attacks & defence", "Cloud networks"] },
-    { id: "devops", name: "DevOps", path: "devops/", status: "outline", color: "#a78bfa", labs: 49,
+    { id: "devops", name: "DevOps", path: "devops/", status: "open", color: "#a78bfa", labs: 49,
       blurb: "Containers, CI/CD pipelines in GitHub Actions and Bamboo, infrastructure as code, Kubernetes and observability, with security at every step.",
       topics: ["Docker", "CI/CD", "Terraform & Ansible", "Kubernetes", "Observability"] },
     { id: "appsec", name: "AppSec & Security", path: "appsec/", status: "outline", color: "#4ade80", labs: 46,
