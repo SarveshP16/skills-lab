@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DevOps plan · sudo learn</title>
-<meta name="description" content="The planned DevOps track: 5 modules and 49 hands-on labs, from Docker and CI/CD (GitHub Actions and Bamboo) to Terraform, Ansible, Kubernetes and observability.">
+<meta name="description" content="The planned DevOps track: 5 modules and 50 hands-on labs, from Docker and CI/CD (GitHub Actions, Jenkins and Bamboo) to Terraform, Ansible, Kubernetes and observability.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e13'/%3E%3Cpath d='M7 10l6 6-6 6' stroke='%234ade80' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='16' y='20' width='9' height='3' rx='1' fill='%234ade80'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -98,7 +98,7 @@
   </header>
 
   <div class="intro">
-    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">the full plan · Module 1 is open</span></div>
+    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">the full plan · Modules 1 and 2 are open</span></div>
     <h1>DevOps: <span>from commit to production.</span></h1>
     <p>Package apps in containers, build pipelines that test, scan and ship them, describe whole environments as code, run them on Kubernetes, and know when something breaks before your users do.</p>
     <p class="note">This is the plan for the track. The labs run in the same simulated terminal as the Linux and Git tracks, on a developer laptop with Docker, with an editor panel for Dockerfiles, YAML and Terraform and a live panel showing your containers, images and builds.</p>
@@ -106,7 +106,7 @@
 
   <div class="facts">
     <div><small>Modules</small><b>5</b></div>
-    <div><small>Labs</small><b>49</b></div>
+    <div><small>Labs</small><b>50</b></div>
     <div><small>Practice drills</small><b>3 per lab</b></div>
     <div><small>Tools</small><b>~20</b></div>
   </div>
@@ -139,7 +139,7 @@
     </div>
   </section>
 
-  <footer>DevOps is the sixth track. It will open after the Git &amp; GitHub, Linux and Networking tracks are finished.</footer>
+  <footer>DevOps is the sixth track. Modules 1 and 2 are open; Modules 3 to 5 follow.</footer>
 </div>
 
 <script>
@@ -174,18 +174,19 @@
       ["109", "Secure images", "Trivy", "Run as non-root, minimal base images, scan for CVEs, find secrets in old layers."],
       ["110", "Containerise Kestrel's API", "Docker", "Turn a real service into small, secure images that run with Compose.", true]
     ] },
-    { n: 2, title: "CI/CD pipelines", goal: "Build, test, scan and ship every change automatically, in GitHub Actions and in Atlassian Bamboo.", labs: [
-      ["201", "Pipeline design", "Actions", "Stages, failing fast, caching."],
-      ["202", "Build & push images", "Actions", "Tag every image with the commit ID and push it to a registry."],
-      ["203", "Tests & quality gates", "Actions", "Unit tests, coverage and linting that block a bad merge."],
-      ["204", "Security gates", "Actions", "Code, dependency, image and secret scanning. Fail the build on high findings."],
-      ["205", "Versions & releases", "Actions", "Semantic versioning and changelogs."],
-      ["206", "Deployment strategies", "Actions", "Rolling, blue-green and canary releases."],
-      ["207", "Environments & rollback", "Actions", "Promote from dev to staging to prod, and roll back fast."],
-      ["208", "Signing & provenance", "cosign", "Sign images and prove where a build came from (SLSA basics)."],
-      ["209", "Bamboo plans & Specs", "Bamboo", "Plans, stages, jobs and tasks. Write Bamboo Specs and translate an Actions workflow into them."],
-      ["210", "Bamboo deployments", "Bamboo", "Deployment projects, environments and releases, agents, variables and secrets, Bitbucket triggers."],
-      ["211", "Commit to production", "Actions", "A full pipeline: build, test, scan, sign and deploy, with a safe rollback.", true]
+    { n: 2, title: "CI/CD pipelines", goal: "Build, test, scan and ship every change automatically, in GitHub Actions, Jenkins and Atlassian Bamboo.", labs: [
+      ["201", "Pipeline design", "Actions", "Parallel jobs, needs, failing fast, caching, timeouts and concurrency."],
+      ["202", "Build & push images", "Actions", "Tag every image with its commit, push to ghcr.io with a least-privilege token."],
+      ["203", "Tests & quality gates", "pytest", "Coverage, a fail-under gate, lint annotations and required status checks."],
+      ["204", "Security gates", "Semgrep · Trivy", "Code, dependency, secret and image scanning, each one a gate."],
+      ["205", "Versions & releases", "Actions", "Semantic versions from conventional commits, release images and notes."],
+      ["206", "Deployment strategies", "kdeploy", "Rolling, blue-green and canary with automatic analysis, and rollback."],
+      ["207", "Environments & rollback", "Actions", "Staging then production, environment secrets, approvals, smoke tests."],
+      ["208", "Signing & provenance", "Sigstore", "Keyless signing, SBOM and SLSA provenance, and a policy that enforces them."],
+      ["209", "Jenkins pipelines", "Jenkins", "A declarative Jenkinsfile: agents, parallel stages, credentials and when."],
+      ["210", "Bamboo plans & Specs", "Bamboo", "Plans, stages, jobs and tasks in Bamboo YAML Specs, with encrypted variables."],
+      ["211", "Bamboo deployments", "Bamboo", "Deployment projects, releases, environments, permissions and redeploying."],
+      ["212", "Commit to production", "Actions", "A full pipeline: gates, a signed image, staging, approval and a canary.", true]
     ] },
     { n: 3, title: "Infrastructure as code", goal: "Describe servers and cloud resources in files you can review, version and scan.", labs: [
       ["301", "Terraform basics", "Terraform", "init, plan and apply."],

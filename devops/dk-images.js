@@ -260,6 +260,7 @@
       reg.manifests[dg] = img; r.tags[p.tag] = dg;
       (BASES[n].aliases || []).forEach(function (a) { var pa = parseRef(a); var ra = reg.repos[pa.repo] = reg.repos[pa.repo] || { tags: {}, pushes: [] }; ra.tags[pa.tag] = dg; });
     });
+    regs["ghcr.io"] = { name: "ghcr.io", public: false, custom: true, repos: {}, manifests: {}, sigs: {}, atts: {} };
     regs["registry.kestrel.io"] = { name: "registry.kestrel.io", public: false, repos: {}, manifests: {}, users: { dev: { token: Dk.registryToken(), namespaces: ["dev", "kestrel"], push: ["dev"] } } };
     return regs;
   }
@@ -288,7 +289,7 @@
   pkg("itsdangerous", "itsdangerous", "2.2.0", { "2.1.2": { deps: [], size: 0.06 * MB }, "2.2.0": { deps: [], size: 0.06 * MB } });
   pkg("click", "click", "8.1.8", { "8.1.3": { deps: [], size: 0.4 * MB }, "8.1.8": { deps: [], size: 0.4 * MB } });
   pkg("blinker", "blinker", "1.9.0", { "1.9.0": { deps: [], size: 0.03 * MB } });
-  pkg("gunicorn", "gunicorn", "23.0.0", { "20.1.0": { deps: [], size: 0.4 * MB }, "23.0.0": { deps: [["packaging", "24.2"]], size: 0.4 * MB } });
+  pkg("gunicorn", "gunicorn", "23.0.0", { "20.1.0": { deps: [], size: 0.4 * MB }, "21.2.0": { deps: [["packaging", "24.2"]], size: 0.4 * MB }, "23.0.0": { deps: [["packaging", "24.2"]], size: 0.4 * MB } });
   pkg("packaging", "packaging", "24.2", { "24.2": { deps: [], size: 0.2 * MB } });
   pkg("requests", "requests", "2.32.4", { "2.25.0": { deps: [["urllib3", "1.26.5"], ["idna", "2.10"], ["chardet", "3.0.4"], ["certifi", "2020.12.5"]], size: 0.2 * MB }, "2.32.4": { deps: [["urllib3", "2.5.0"], ["idna", "3.10"], ["charset-normalizer", "3.4.2"], ["certifi", "2025.6.15"]], size: 0.2 * MB } });
   pkg("urllib3", "urllib3", "2.5.0", { "1.26.5": { deps: [], size: 0.5 * MB }, "2.5.0": { deps: [], size: 0.5 * MB } });

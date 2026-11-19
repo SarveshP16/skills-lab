@@ -14,7 +14,16 @@
   /* ================================================================== state */
   function state(sys) {
     if (sys.dk) return sys.dk;
-    var d = sys.dk = { t: 0, seq: 0, images: [], ctrs: [], vols: {}, nets: {}, cache: {}, regs: Dk.newRegistries(), builds: [], events: [], lastBuild: null, ipSeq: {} };
+    var d = sys.dk = { t: 0, seq: 0, images: [], ctrs: [], vols: {}, nets: {}, cache: {}, builds: [], events: [], lastBuild: null, ipSeq: {} };
+    // Registries are the outside world: the laptop, CI runners and build agents all see the same ones (kept on the
+    // simulated GitHub's hub when there is one, so a runner pushing to ghcr.io and the laptop pulling agree).
+    var own = Dk.newRegistries();
+    Object.defineProperty(d, "regs", { enumerable: true, configurable: true, get: function () {
+      var h = sys.github || (sys.hubSys && sys.hubSys.github) || (sys.dkHost && (sys.dkHost.github || (sys.dkHost.hubSys && sys.dkHost.hubSys.github)));
+      if (!h) return own;
+      if (!h.dkRegs) h.dkRegs = own;
+      return h.dkRegs;
+    } });
     d.nets.bridge = { name: "bridge", id: Dk.hex("net-bridge", 64), driver: "bridge", subnet: "172.17.0.0/16", gw: "172.17.0.1", dflt: true, dns: false, created: -86400 * 20 };
     d.nets.host = { name: "host", id: Dk.hex("net-host", 64), driver: "host", dflt: true, created: -86400 * 20 };
     d.nets.none = { name: "none", id: Dk.hex("net-none", 64), driver: "null", dflt: true, created: -86400 * 20 };
@@ -62,17 +71,26 @@
   }
   function b64(s) { return (typeof btoa === "function" ? btoa(s) : Buffer.from(s).toString("base64")); }
   function unb64(s) { try { return typeof atob === "function" ? atob(s) : Buffer.from(s, "base64").toString(); } catch (e) { return ""; } }
-  function loggedInAs(sess, registry) {
+  function credsFor(sess, registry) {
     var a = (dockerConfig(sess).auths || {})[registry];
     if (!a || !a.auth) return null;
-    var up = unb64(a.auth).split(":"), reg = state(sess.sys).regs[registry];
-    var u = reg && reg.users && reg.users[up[0]];
-    return u && u.token === up.slice(1).join(":") ? up[0] : null;
+    var up = unb64(a.auth).split(":");
+    return { user: up[0], pass: up.slice(1).join(":") };
+  }
+  Dk.credsFor = credsFor;
+  // Registries with their own idea of who you are (ghcr.io takes GitHub tokens) plug in here.
+  Dk.registryAuth = Dk.registryAuth || {};
+  function loggedInAs(sess, registry) {
+    var cr = credsFor(sess, registry); if (!cr) return null;
+    var reg = state(sess.sys).regs[registry];
+    var u = reg && reg.users && reg.users[cr.user];
+    return u && u.token === cr.pass ? cr.user : null;
   }
   // Can this session read/push repo in that registry? Returns null or the daemon's error text.
   function regAccess(sess, p, push) {
     var reg = state(sess.sys).regs[p.registry];
     if (!reg) return "Error response from daemon: Get \"https://" + p.registry + "/v2/\": dial tcp: lookup " + p.registry + " on 127.0.0.53:53: no such host";
+    if (reg.custom && Dk.registryAuth[reg.name]) return Dk.registryAuth[reg.name].access(sess, p, push, credsFor(sess, p.registry));
     if (reg.public && !push) return null;
     if (reg.public && push) return p.registry === "docker.io" ? "denied: requested access to the resource is denied" : null;
     var user = loggedInAs(sess, p.registry);
@@ -1340,7 +1358,8 @@
     if (!o.username || pw == null) { note(io, "(docker login would ask for a username and password here. In the lab, pass them: docker login " + registry + " -u USER --password-stdin < TOKENFILE)"); return 1; }
     if (!reg) { errl(io, "Error response from daemon: Get \"https://" + registry + "/v2/\": dial tcp: lookup " + registry + ": no such host"); return 1; }
     var u = reg.users && reg.users[o.username];
-    if (!u || u.token !== pw) { errl(io, "Error response from daemon: Get \"https://" + registry + "/v2/\": unauthorized: incorrect username or password"); return 1; }
+    var good = reg.custom && Dk.registryAuth[reg.name] ? Dk.registryAuth[reg.name].login(sess, o.username, pw) : !!u && u.token === pw;
+    if (!good) { errl(io, "Error response from daemon: Get \"https://" + registry + "/v2/\": " + (reg.custom ? "denied: denied" : "unauthorized: incorrect username or password")); return 1; }
     var home = homeOf(sess), cfg = dockerConfig(sess);
     cfg.auths = cfg.auths || {}; cfg.auths[registry] = { auth: b64(o.username + ":" + pw) };
     var dsess = { sys: sys, uid: sess.uid, gid: sess.gid, groups: [], cwd: "/", umask: 18, vars: {} };

@@ -917,13 +917,23 @@
 
   /* ---------------- sed */
   CMDS.sed = function (args, io, sess) {
-    var p = opts("sed", args, { flags: "nErsuz", vals: "eif", long: { quiet: "n", silent: "n", "regexp-extended": "E", expression: "e=", "in-place": "inplace" } });
+    // -e may be given several times (sed -i -e 's/a/b/' -e 's/c/d/' FILE): collect them all first.
+    var exprs = [], a2 = [args[0]];
+    for (var ai = 1; ai < args.length; ai++) {
+      var ax = args[ai], am;
+      if (ax === "--") { a2 = a2.concat(args.slice(ai)); break; }
+      if ((ax === "-e" || ax === "--expression") && ai + 1 < args.length) { exprs.push(args[++ai]); continue; }
+      if (/^--expression=/.test(ax)) { exprs.push(ax.slice(13)); continue; }
+      if ((am = /^-([nErsuz]+)e$/.exec(ax)) && ai + 1 < args.length) { a2.push("-" + am[1]); exprs.push(args[++ai]); continue; }
+      a2.push(ax);
+    }
+    var p = opts("sed", a2, { flags: "nErsuz", vals: "eif", long: { quiet: "n", silent: "n", "regexp-extended": "E", expression: "e=", "in-place": "inplace" } });
     if (p.o.help) return help(io, "sed");
     var o = p.o, rest = p.rest.slice();
     var inPlace = o.i !== undefined || o.inplace;
     // "-i" may be glued to a suffix (-i.bak); a bare -i consumed the next word: give it back.
     if (o.i !== undefined && !/^\./.test(o.i) && o.i !== "") { rest.unshift(o.i); o.i = ""; }
-    var script = o.e !== undefined ? o.e : rest.shift();
+    var script = exprs.length ? exprs.join("\n") : o.e !== undefined ? o.e : rest.shift();
     if (script === undefined) throw new ShError("Usage: sed [OPTION]... {script-only-if-no-other-script} [input-file]...", 1);
     var ere = o.E || o.r;
     var cmds = parseSed(script, ere);

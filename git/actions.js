@@ -873,7 +873,7 @@
           J.log(s, "##[endgroup]");
           var wn = G.nodeAt(J.rs, wd);
           if (!wn || wn.type !== "d") { J.log(s, "##[error]An error occurred trying to start process '/usr/bin/bash' with working directory '" + wd + "'. No such file or directory"); J.annotate("error", "An error occurred trying to start process '/usr/bin/bash' with working directory '" + wd + "'. No such file or directory"); code = 1; }
-          else { code = J.exec(s, script, sh, wd, envAll, st["timeout-minutes"]); secs = 1 + hash(script) % 4; }
+          else { J.lastExecSecs = 0; code = J.exec(s, script, sh, wd, envAll, st["timeout-minutes"]); secs = 1 + hash(script) % 4 + Math.round(J.lastExecSecs || 0); }
           if (st.id) J.stepsCtx[st.id] = { outputs: s.outputs || {}, outcome: code ? "failure" : "success", conclusion: code ? "failure" : "success" };
         } else {
           var w = {};

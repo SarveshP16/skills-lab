@@ -15,9 +15,9 @@
     var work = document.querySelector(".work"), cons = document.querySelector(".console");
     var el = document.createElement("section");
     el.className = "dkviz"; el.id = "dkviz"; el.setAttribute("aria-label", "Docker on this laptop");
-    el.innerHTML = '<div class="dv-head"><div class="dv-tabs" role="tablist"><button role="tab" data-v="ctr" aria-selected="true">Containers</button><button role="tab" data-v="img" aria-selected="false">Images</button><button role="tab" data-v="bld" aria-selected="false">Build<span class="dot" hidden></span></button></div>' +
+    el.innerHTML = '<div class="dv-head"><div class="dv-tabs" role="tablist"><button role="tab" data-v="ctr" aria-selected="true">Containers</button><button role="tab" data-v="img" aria-selected="false">Images</button><button role="tab" data-v="bld" aria-selected="false">Build<span class="dot" hidden></span></button><button role="tab" data-v="pip" aria-selected="false" class="ci-tab" hidden>Pipeline<span class="dot" hidden></span></button><button role="tab" data-v="env" aria-selected="false" class="ci-tab" hidden>Environments<span class="dot" hidden></span></button></div>' +
       '<span class="dv-cap" id="dvCap"></span><button class="dv-toggle" type="button" id="dvToggle" title="Hide or show the Docker panel">hide</button></div>' +
-      '<div class="dv-body"><div class="dv-view" id="dvCtr"></div><div class="dv-view" id="dvImg" hidden></div><div class="dv-view" id="dvBld" hidden></div></div>';
+      '<div class="dv-body"><div class="dv-view" id="dvCtr"></div><div class="dv-view" id="dvImg" hidden></div><div class="dv-view" id="dvBld" hidden></div><div class="dv-view" id="dvPip" hidden></div><div class="dv-view" id="dvEnv" hidden></div></div>';
     work.insertBefore(el, cons);
     document.body.classList.add("dk-mode");
     var collapsed = false; try { collapsed = localStorage.getItem(KEY) === "hidden"; } catch (e) { /* storage blocked */ }
@@ -33,8 +33,8 @@
   function show(v) {
     state.view = v;
     Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs button"), function (b) { b.setAttribute("aria-selected", b.getAttribute("data-v") === v ? "true" : "false"); });
-    $("dvCtr").hidden = v !== "ctr"; $("dvImg").hidden = v !== "img"; $("dvBld").hidden = v !== "bld";
-    if (v === "bld") document.querySelector(".dv-tabs .dot").hidden = true;
+    $("dvCtr").hidden = v !== "ctr"; $("dvImg").hidden = v !== "img"; $("dvBld").hidden = v !== "bld"; $("dvPip").hidden = v !== "pip"; $("dvEnv").hidden = v !== "env";
+    var tb = document.querySelector('.dv-tabs button[data-v="' + v + '"] .dot'); if (tb) tb.hidden = true;
     render();
   }
 
@@ -138,7 +138,7 @@
 
   function render() {
     if (!state.sys || document.getElementById("dkviz").classList.contains("collapsed")) return;
-    if (state.view === "ctr") renderCtr(); else if (state.view === "img") renderImg(); else renderBld();
+    if (state.view === "ctr") renderCtr(); else if (state.view === "img") renderImg(); else if (state.view === "pip") renderPip(); else if (state.view === "env") renderEnv(); else renderBld();
   }
   function caption(sys, idx) {
     var d = sys.dk; if (!d) return "Docker is running on kc-dev-01. Containers, images and builds show up here as you work.";
@@ -151,6 +151,97 @@
     var what = { start: c ? "Started <b>" + esc(c.name) + "</b>" : null, die: c ? "<b>" + esc(c.name) + "</b> <span class=\"bad\">exited (" + last.code + ")</span>" : null, stop: c ? "Stopped <b>" + esc(c.name) + "</b>" : null, destroy: "Removed <b>" + esc(last.name || "") + "</b>", build: "Built <b>" + esc(last.ref) + "</b>", pull: "Pulled <b>" + esc(last.ref) + "</b>", push: "Pushed <b>" + esc(last.ref) + "</b>", tag: "Tagged <b>" + esc(last.ref) + "</b>", exec: c ? "Ran a command in <b>" + esc(c.name) + "</b>" : null, compose: "compose " + esc(last.sub) + " in <b>" + esc(last.project) + "</b>", volume: "Created volume <b>" + esc(last.name) + "</b>" }[last.kind];
     return (what ? what + " · " : "") + base;
   }
+
+  /* ---------------- CI/CD (Module 2): the latest pipeline run, whichever system ran it, and the environments */
+  var CI = root.CI;
+  function hubOf(sys) { return CI && CI.hubOf ? CI.hubOf(sys) : null; }
+  function latestRun(sys) {
+    var h = hubOf(sys); if (!h) return null;
+    var cands = [];
+    var r = window.GitHub && GitHub.find(sys, CI.REPO);
+    if (r && r.runs.length) { var ar = r.runs.slice().sort(function (a, b) { return b.id - a.id; })[0]; cands.push({ t: ar.created, run: actionsModel(ar) }); }
+    if (h.jenkins) Object.keys(h.jenkins.jobs).forEach(function (jn) { var job = h.jenkins.jobs[jn]; Object.keys(job.branches).forEach(function (bn) { var bs = job.branches[bn].builds, b = bs[bs.length - 1]; if (b) cands.push({ t: b.started + 0.5, run: jenkinsModel(job, b) }); }); });
+    if (h.bamboo) Object.keys(h.bamboo.plans).forEach(function (pk) { var P = h.bamboo.plans[pk]; Object.keys(P.branches).forEach(function (bn) { var rs = P.branches[bn].results, x = rs[rs.length - 1]; if (x) cands.push({ t: x.t + 0.5, run: bambooModel(P, x) }); }); });
+    cands.sort(function (a, b) { return b.t - a.t; });
+    return cands[0] ? cands[0].run : null;
+  }
+  function st(status, conclusion) {
+    if (status === "waiting") return "wait";
+    if (status !== "completed") return status === "in_progress" ? "run" : "queue";
+    return { success: "ok", failure: "bad", cancelled: "skip", skipped: "skip", neutral: "ok" }[conclusion] || "queue";
+  }
+  function actionsModel(run) {
+    var depth = {}, jobs = run.jobs, defs = (run.wf && run.wf.doc && run.wf.doc.jobs) || {};
+    function d(k, seen) { if (depth[k] != null) return depth[k]; seen = seen || {}; if (seen[k]) return 0; seen[k] = 1; var n = defs[k] && defs[k].needs; n = n == null ? [] : Array.isArray(n) ? n : [n]; depth[k] = n.length ? 1 + Math.max.apply(null, n.map(function (x) { return d(String(x), seen); })) : 0; return depth[k]; }
+    var cols = [];
+    jobs.forEach(function (j) { var c = d(j.key); (cols[c] = cols[c] || { name: "", boxes: [] }).boxes.push({ name: j.name, s: st(j.status, j.conclusion), sub: j.envName ? "env: " + j.envName + (j.status === "waiting" ? " · needs approval" : "") : j.steps.length ? j.steps.length + " steps" : "" }); });
+    if (!jobs.length && run.error) cols.push({ name: "", boxes: [{ name: "Invalid workflow file", s: "bad", sub: run.wfPath }] });
+    var res = run.status === "completed" ? run.conclusion : run.status;
+    return { sys: "GitHub Actions", title: run.wfName, num: "#" + run.number, ref: (run.branch || run.ref || "").replace(/^refs\/(heads|tags)\//, "") + " @ " + String(run.headSha || "").slice(0, 7), event: run.event, result: res, s: st(run.status, run.conclusion), cols: cols.filter(Boolean) };
+  }
+  function jenkinsModel(job, b) {
+    // top-level stages are columns; a parallel stage's branches are stacked in its column
+    var cols = [];
+    (b.stages || []).forEach(function (x) {
+      var box = { name: x.name, s: { success: "ok", failed: "bad", skipped: "skip", unstable: "wait", aborted: "skip" }[x.status] || "queue", sub: x.when ? "skipped (when)" : x.status === "skipped" ? "skipped" : "" };
+      if (!x.depth || !cols.length) { cols.push({ name: "", boxes: [box], top: x.name }); return; }
+      var c = cols[cols.length - 1];
+      if (!c.kids) { c.kids = true; c.name = c.top; c.boxes = []; }
+      c.boxes.push(box);
+    });
+    var res = (b.result || "running").toLowerCase();
+    return { sys: "Jenkins", title: job.name + " » " + b.branch, num: "#" + b.number, ref: b.branch + " @ " + String(b.sha).slice(0, 7), event: b.cause, result: res, s: { success: "ok", failure: "bad", unstable: "wait", aborted: "skip" }[res] || "run", cols: cols, extra: b.tests ? b.tests.total + " tests" + (b.tests.failed ? ", " + b.tests.failed + " failed" : "") : "" };
+  }
+  function bambooModel(P, r) {
+    var cols = P.stages.map(function (sg) { return { name: sg.name, boxes: r.jobs.filter(function (j) { return j.stage === sg.name; }).map(function (j) { return { name: j.name, s: { Successful: "ok", Failed: "bad", Queued: "wait", "Not built": "skip" }[j.state] || "queue", sub: j.queued ? "no agent" : j.tests ? j.tests.total + " tests" : j.agent || "" }; }) }; });
+    return { sys: "Bamboo", title: P.key + " · " + P.name, num: "#" + r.number, ref: r.branch + " @ " + String(r.sha).slice(0, 7), event: r.reason, result: r.state.toLowerCase(), s: { Successful: "ok", Failed: "bad", Queued: "wait" }[r.state] || "run", cols: cols };
+  }
+  var SICON = { ok: "✓", bad: "✗", skip: "–", wait: "⏸", run: "●", queue: "○" };
+  function renderPip() {
+    var sys = state.sys, m = latestRun(sys);
+    if (!m) { $("dvPip").innerHTML = '<div class="dv-empty">No pipeline runs yet. Push to <code>kestrel/notes-api</code> and the latest run, from GitHub Actions, Jenkins or Bamboo, shows up here: each stage or job as a box, green when it passed and red when it failed.</div>'; return; }
+    var h = '<div class="dv-bh"><b>' + esc(m.sys) + "</b> · " + esc(m.title) + " " + esc(m.num) + " · " + esc(m.ref) + ' · <span class="' + (m.s === "ok" ? "good" : m.s === "bad" ? "bad" : "warn") + '">' + esc(m.result) + "</span>" + (m.extra ? " · " + esc(m.extra) : "") + "</div>";
+    h += '<div class="ci-flow">';
+    m.cols.forEach(function (c, i) {
+      if (i) h += '<div class="ci-arrow" aria-hidden="true">→</div>';
+      h += '<div class="ci-col">' + (c.name ? '<div class="ci-cn">' + esc(c.name) + "</div>" : "") + c.boxes.map(function (b) { return '<div class="ci-box ' + b.s + '" title="' + esc(b.name + (b.sub ? " · " + b.sub : "")) + '"><span class="ic">' + SICON[b.s] + "</span><b>" + esc(b.name) + "</b>" + (b.sub ? "<small>" + esc(b.sub) + "</small>" : "") + "</div>"; }).join("") + "</div>";
+    });
+    h += "</div>";
+    $("dvPip").innerHTML = h;
+  }
+  function renderEnv() {
+    var sys = state.sys, F = hubOf(sys) && hubOf(sys).fleet, svc = F && F.services.notes;
+    if (!svc) { $("dvEnv").innerHTML = '<div class="dv-empty">No environments in this lab yet.</div>'; return; }
+    var order = ["dev", "staging", "production"].filter(function (e) { return svc.envs[e]; }).concat(Object.keys(svc.envs).filter(function (e) { return ["dev", "staging", "production"].indexOf(e) < 0; }));
+    var gh = window.GitHub && GitHub.find(sys, CI.REPO), ghEnvs = (gh && gh.envs) || {};
+    var h = '<div class="ci-envs">';
+    order.forEach(function (en, i) {
+      var E = svc.envs[en], split = CI.trafficSplit(E), ro = E.rollout && E.rollout.status !== "done" ? E.rollout : null;
+      var cls = ro && ro.status === "aborted" ? "bad" : ro ? "warn" : "ok";
+      if (i) h += '<div class="ci-arrow" aria-hidden="true">→</div>';
+      h += '<div class="ci-env ' + cls + '"><div class="ci-et"><b>' + esc(en) + '</b><span class="ver">' + esc(E.current.version) + "</span></div>";
+      h += '<div class="ci-es">rev ' + E.current.rev + " · " + esc(E.current.strategy) + " · " + E.insts.filter(function (x) { return x.ok; }).length + "/" + E.size + " ready</div>";
+      h += '<div class="ci-traffic">' + split.map(function (sp, k) { return '<span class="seg s' + k + '" style="width:' + Math.max(sp.w, 4) + '%" title="' + esc(sp.version) + ": " + sp.w + '% of traffic">' + (sp.w >= 18 ? esc(sp.version) + " " + sp.w + "%" : "") + "</span>"; }).join("") + "</div>";
+      var chips = "";
+      if (ro) chips += '<span class="chip ' + (ro.status === "aborted" ? "bad" : "sec") + '">' + esc(ro.strategy) + " " + esc(ro.version) + ": " + esc(ro.status) + "</span>";
+      if (E.policy && E.policy.requireSignature) chips += '<span class="chip ro" title="Only images signed by the CI identity may run here">🔏 signed only</span>';
+      if (ghEnvs[en]) { var ge = ghEnvs[en], rv = (ge.reviewers || []).length, ns = ge.secrets ? Object.keys(ge.secrets).length : 0; chips += '<span class="chip bind" title="GitHub environment">GitHub env' + (rv ? " · " + rv + " reviewer" + (rv > 1 ? "s" : "") : "") + (ns ? " · " + ns + " secret" + (ns > 1 ? "s" : "") : "") + "</span>"; }
+      if (chips) h += '<div class="dv-chips">' + chips + "</div>";
+      h += "</div>";
+    });
+    h += "</div>";
+    var evs = (F.events || []).slice(-3).reverse();
+    if (evs.length) h += '<div class="dv-foot"><span class="lbl">recent</span>' + evs.map(function (e) { return '<span class="chip">' + esc(e.env || "") + " " + esc(e.kind || e.type || "") + (e.version ? " " + esc(e.version) : "") + " <small>from " + esc(e.where || "") + "</small></span>"; }).join("") + "</div>";
+    $("dvEnv").innerHTML = h;
+  }
+  function ciCaption(sys) {
+    var m = latestRun(sys), F = hubOf(sys) && hubOf(sys).fleet, svc = F && F.services.notes;
+    var parts = [];
+    if (m) parts.push(esc(m.sys) + " " + esc(m.num) + ' <span class="' + (m.s === "ok" ? "" : "bad") + '">' + esc(m.result) + "</span>");
+    if (svc) parts.push(Object.keys(svc.envs).map(function (e) { return esc(e) + " <b>" + esc(svc.envs[e].current.version) + "</b>"; }).join(" · "));
+    return parts.join(" · ") || "CI/CD for kestrel/notes-api: pipeline runs and environments show up here.";
+  }
+  function ciSig(sys) { var m = latestRun(sys), F = hubOf(sys) && hubOf(sys).fleet; return { run: m ? m.sys + m.num + m.result + m.title : "", env: F ? JSON.stringify(Object.keys(F.services).map(function (k) { var s = F.services[k]; return Object.keys(s.envs).map(function (e) { return s.envs[e].current.rev + (s.envs[e].rollout ? s.envs[e].rollout.status + s.envs[e].rollout.weight : ""); }); })) : "" }; }
 
   /* ---------------- hooks */
   function badge(lab) {
@@ -165,18 +256,29 @@
   function onLab(src, lab, drill, fresh) {
     badge(lab);
     state.src = src; state.sys = null; state.lastIdx = -1;
-    $("dvCap").innerHTML = "Docker is running on kc-dev-01. Containers, images and builds show up here as you work.";
-    show("ctr");
+    state.ci = !!(lab && (lab.ci || lab.module === 2));
+    Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .ci-tab"), function (b) { b.hidden = !state.ci; });
+    state.sig = null;
+    $("dvCap").innerHTML = state.ci ? "CI/CD for kestrel/notes-api: pipeline runs and environments show up here." : "Docker is running on kc-dev-01. Containers, images and builds show up here as you work.";
+    show(state.ci ? "pip" : "ctr");
     var cfg = window.LAB_CONFIG;
     if (fresh) cfg.runner.call({ type: "run", code: "", files: src.files || {}, prelude: src.prelude || "", system: src.system, checks: [] }).then(function (res) {
       if (state.src !== src || !res || !res.sys) return;
-      state.sys = res.sys; render();
+      state.sys = res.sys; if (state.ci) { state.sig = ciSig(res.sys); $("dvCap").innerHTML = ciCaption(res.sys); } render();
     });
   }
   function onResult(res) {
     if (!res || !res.sys) return;
     state.sys = res.sys;
     state.lastIdx = (res.count || 1) - 1;
+    if (state.ci) {
+      $("dvCap").innerHTML = ciCaption(res.sys);
+      var sig = ciSig(res.sys), old = state.sig || { run: "", env: "" }; state.sig = sig;
+      if (sig.run !== old.run && state.view !== "pip") { var d1 = document.querySelector('.dv-tabs button[data-v="pip"] .dot'); if (d1) d1.hidden = false; }
+      if (sig.env !== old.env && old.env && state.view !== "env") { var d2 = document.querySelector('.dv-tabs button[data-v="env"] .dot'); if (d2) d2.hidden = false; }
+      render();
+      return;
+    }
     $("dvCap").innerHTML = caption(res.sys, state.lastIdx);
     var evs = ((res.sys.dk && res.sys.dk.events) || []).filter(function (e) { return e.cmd === state.lastIdx; });
     if (evs.some(function (e) { return e.kind === "build"; }) || (res.sys.dk && res.sys.dk.lastBuild && res.sys.dk.lastBuild.cmd === state.lastIdx)) { if (state.view !== "bld") { var dot = document.querySelector(".dv-tabs .dot"); if (dot) dot.hidden = false; } }
