@@ -125,6 +125,29 @@
 .ci-traffic .s1 { background: var(--amber); }
 .chip.bad { color: var(--red); border-color: rgba(248, 113, 113, 0.4); }
 
+/* infrastructure (Module 3): the AWS account and the servers */
+.iac-tab[hidden], .dk-tab[hidden] { display: none; }
+.iac-plan { font: 500 11.5px/1.7 var(--font-mono); color: var(--text-2); margin-bottom: 8px; padding: 5px 8px; border: 1px dashed var(--dv-line); border-radius: 7px; background: var(--dv-bg); }
+.iac-plan b { color: var(--dv); font-weight: 600; margin-right: 4px; }
+.iac-plan .pc { display: inline-block; margin-right: 8px; white-space: nowrap; }
+.iac-plan .pc.create { color: var(--green); } .iac-plan .pc.update { color: var(--amber); } .iac-plan .pc.delete, .iac-plan .pc.replace { color: var(--red); }
+.iac-vpc { border: 1px solid var(--line-2); border-radius: 10px; padding: 6px 8px 8px; margin-bottom: 8px; background: var(--panel); }
+.iac-vh { font: 500 11.5px var(--font-mono); color: var(--text-2); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.iac-vh b { color: var(--dv); }
+.iac-vh .dim, .iac-sh .dim { color: var(--muted); }
+.iac-subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.iac-sub { border: 1px dashed var(--line-2); border-radius: 8px; padding: 5px 7px 7px; min-width: 0; }
+.iac-sub.pub { border-color: rgba(34, 211, 238, 0.4); }
+.iac-sh { font: 600 10.5px var(--font-mono); color: var(--text-2); margin-bottom: 5px; text-transform: none; }
+.iac-sub.pub .iac-sh { color: var(--cyan); }
+.iac-inst { background: var(--panel-2); border: 1px solid var(--line-2); border-left: 3px solid var(--green); border-radius: 7px; padding: 5px 7px 6px; margin-top: 5px; min-width: 0; }
+.iac-inst.idle { border-left-color: var(--dim); opacity: 0.75; }
+.iac-inst .st { background: var(--green); }
+.iac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.iac-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 8px 7px; min-width: 0; }
+.iac-ct { font: 500 12px var(--font-mono); color: var(--text-2); margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iac-ct b { color: var(--text); font-weight: 600; }
+
 @media (max-width: 820px) {
   .dv-body { height: auto; max-height: 360px; }
   .dv-view { max-height: 360px; }

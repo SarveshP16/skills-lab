@@ -15,9 +15,9 @@
     var work = document.querySelector(".work"), cons = document.querySelector(".console");
     var el = document.createElement("section");
     el.className = "dkviz"; el.id = "dkviz"; el.setAttribute("aria-label", "Docker on this laptop");
-    el.innerHTML = '<div class="dv-head"><div class="dv-tabs" role="tablist"><button role="tab" data-v="ctr" aria-selected="true">Containers</button><button role="tab" data-v="img" aria-selected="false">Images</button><button role="tab" data-v="bld" aria-selected="false">Build<span class="dot" hidden></span></button><button role="tab" data-v="pip" aria-selected="false" class="ci-tab" hidden>Pipeline<span class="dot" hidden></span></button><button role="tab" data-v="env" aria-selected="false" class="ci-tab" hidden>Environments<span class="dot" hidden></span></button></div>' +
+    el.innerHTML = '<div class="dv-head"><div class="dv-tabs" role="tablist"><button role="tab" data-v="ctr" aria-selected="true" class="dk-tab">Containers</button><button role="tab" data-v="img" aria-selected="false" class="dk-tab">Images</button><button role="tab" data-v="bld" aria-selected="false" class="dk-tab">Build<span class="dot" hidden></span></button><button role="tab" data-v="cloud" aria-selected="false" class="iac-tab" hidden>Cloud<span class="dot" hidden></span></button><button role="tab" data-v="hosts" aria-selected="false" class="iac-tab" hidden>Hosts<span class="dot" hidden></span></button><button role="tab" data-v="pip" aria-selected="false" class="ci-tab" hidden>Pipeline<span class="dot" hidden></span></button><button role="tab" data-v="env" aria-selected="false" class="ci-tab" hidden>Environments<span class="dot" hidden></span></button></div>' +
       '<span class="dv-cap" id="dvCap"></span><button class="dv-toggle" type="button" id="dvToggle" title="Hide or show the Docker panel">hide</button></div>' +
-      '<div class="dv-body"><div class="dv-view" id="dvCtr"></div><div class="dv-view" id="dvImg" hidden></div><div class="dv-view" id="dvBld" hidden></div><div class="dv-view" id="dvPip" hidden></div><div class="dv-view" id="dvEnv" hidden></div></div>';
+      '<div class="dv-body"><div class="dv-view" id="dvCtr"></div><div class="dv-view" id="dvImg" hidden></div><div class="dv-view" id="dvBld" hidden></div><div class="dv-view" id="dvPip" hidden></div><div class="dv-view" id="dvEnv" hidden></div><div class="dv-view" id="dvCloud" hidden></div><div class="dv-view" id="dvHosts" hidden></div></div>';
     work.insertBefore(el, cons);
     document.body.classList.add("dk-mode");
     var collapsed = false; try { collapsed = localStorage.getItem(KEY) === "hidden"; } catch (e) { /* storage blocked */ }
@@ -33,7 +33,7 @@
   function show(v) {
     state.view = v;
     Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs button"), function (b) { b.setAttribute("aria-selected", b.getAttribute("data-v") === v ? "true" : "false"); });
-    $("dvCtr").hidden = v !== "ctr"; $("dvImg").hidden = v !== "img"; $("dvBld").hidden = v !== "bld"; $("dvPip").hidden = v !== "pip"; $("dvEnv").hidden = v !== "env";
+    $("dvCtr").hidden = v !== "ctr"; $("dvImg").hidden = v !== "img"; $("dvBld").hidden = v !== "bld"; $("dvPip").hidden = v !== "pip"; $("dvEnv").hidden = v !== "env"; $("dvCloud").hidden = v !== "cloud"; $("dvHosts").hidden = v !== "hosts";
     var tb = document.querySelector('.dv-tabs button[data-v="' + v + '"] .dot'); if (tb) tb.hidden = true;
     render();
   }
@@ -138,7 +138,7 @@
 
   function render() {
     if (!state.sys || document.getElementById("dkviz").classList.contains("collapsed")) return;
-    if (state.view === "ctr") renderCtr(); else if (state.view === "img") renderImg(); else if (state.view === "pip") renderPip(); else if (state.view === "env") renderEnv(); else renderBld();
+    if (state.view === "ctr") renderCtr(); else if (state.view === "img") renderImg(); else if (state.view === "pip") renderPip(); else if (state.view === "env") renderEnv(); else if (state.view === "cloud") renderCloud(); else if (state.view === "hosts") renderHosts(); else renderBld();
   }
   function caption(sys, idx) {
     var d = sys.dk; if (!d) return "Docker is running on kc-dev-01. Containers, images and builds show up here as you work.";
@@ -158,8 +158,10 @@
   function latestRun(sys) {
     var h = hubOf(sys); if (!h) return null;
     var cands = [];
-    var r = window.GitHub && GitHub.find(sys, CI.REPO);
-    if (r && r.runs.length) { var ar = r.runs.slice().sort(function (a, b) { return b.id - a.id; })[0]; cands.push({ t: ar.created, run: actionsModel(ar) }); }
+    [CI.REPO, window.IAC && IAC.INFRA_REPO].forEach(function (full) {
+      var r = full && window.GitHub && GitHub.find(sys, full);
+      if (r && r.runs.length) { var ar = r.runs.slice().sort(function (a, b) { return b.id - a.id; })[0]; cands.push({ t: ar.created, run: actionsModel(ar) }); }
+    });
     if (h.jenkins) Object.keys(h.jenkins.jobs).forEach(function (jn) { var job = h.jenkins.jobs[jn]; Object.keys(job.branches).forEach(function (bn) { var bs = job.branches[bn].builds, b = bs[bs.length - 1]; if (b) cands.push({ t: b.started + 0.5, run: jenkinsModel(job, b) }); }); });
     if (h.bamboo) Object.keys(h.bamboo.plans).forEach(function (pk) { var P = h.bamboo.plans[pk]; Object.keys(P.branches).forEach(function (bn) { var rs = P.branches[bn].results, x = rs[rs.length - 1]; if (x) cands.push({ t: x.t + 0.5, run: bambooModel(P, x) }); }); });
     cands.sort(function (a, b) { return b.t - a.t; });
@@ -199,7 +201,7 @@
   var SICON = { ok: "✓", bad: "✗", skip: "–", wait: "⏸", run: "●", queue: "○" };
   function renderPip() {
     var sys = state.sys, m = latestRun(sys);
-    if (!m) { $("dvPip").innerHTML = '<div class="dv-empty">No pipeline runs yet. Push to <code>kestrel/notes-api</code> and the latest run, from GitHub Actions, Jenkins or Bamboo, shows up here: each stage or job as a box, green when it passed and red when it failed.</div>'; return; }
+    if (!m) { $("dvPip").innerHTML = '<div class="dv-empty">No pipeline runs yet. Push to <code>' + (state.iac ? "kestrel/infra" : "kestrel/notes-api") + '</code> and the latest run, from GitHub Actions, Jenkins or Bamboo, shows up here: each stage or job as a box, green when it passed and red when it failed.</div>'; return; }
     var h = '<div class="dv-bh"><b>' + esc(m.sys) + "</b> · " + esc(m.title) + " " + esc(m.num) + " · " + esc(m.ref) + ' · <span class="' + (m.s === "ok" ? "good" : m.s === "bad" ? "bad" : "warn") + '">' + esc(m.result) + "</span>" + (m.extra ? " · " + esc(m.extra) : "") + "</div>";
     h += '<div class="ci-flow">';
     m.cols.forEach(function (c, i) {
@@ -243,6 +245,90 @@
   }
   function ciSig(sys) { var m = latestRun(sys), F = hubOf(sys) && hubOf(sys).fleet; return { run: m ? m.sys + m.num + m.result + m.title : "", env: F ? JSON.stringify(Object.keys(F.services).map(function (k) { var s = F.services[k]; return Object.keys(s.envs).map(function (e) { return s.envs[e].current.rev + (s.envs[e].rollout ? s.envs[e].rollout.status + s.envs[e].rollout.weight : ""); }); })) : "" }; }
 
+  /* ---------------- infrastructure (Module 3): the AWS account and the servers */
+  function iacA(sys) { return window.IAC ? IAC.aws(sys) : null; }
+  function tagName(o) { return (o.tags && o.tags.Name) || ""; }
+  function lastPlanFor(A) { var lp = A && A.lastPlan; if (!lp) return {}; var m = {}; lp.changes.forEach(function (c) { m[c.type + ":" + c.addr] = c.action; }); return { list: lp.changes, map: m }; }
+  function driftIds(A) { var ids = {}; (A.events || []).forEach(function (e) { if (e.kind === "drift") ids[e.id] = true; if (/^tf-(update|create|import)$/.test(e.kind) && ids[e.id]) delete ids[e.id]; }); return ids; }
+  function iacCaption(sys) {
+    var A = iacA(sys); if (!A) return "";
+    var n = 0; Object.keys(A.res).forEach(function (t) { n += Object.keys(A.res[t]).length; });
+    var lastApply = (A.events || []).filter(function (e) { return /^tf-(apply|destroy-all)$/.test(e.kind); }).slice(-1)[0];
+    var lp = A.lastPlan ? A.lastPlan.changes : null;
+    var parts = ["AWS <b>" + n + "</b> resource" + (n === 1 ? "" : "s")];
+    if (lp) { var c = { create: 0, update: 0, "delete": 0, replace: 0 }; lp.forEach(function (x) { c[x.action] = (c[x.action] || 0) + 1; }); parts.push("plan <b>+" + (c.create + c.replace) + " ~" + c.update + " -" + (c["delete"] + c.replace) + "</b> (not applied)"); }
+    else if (lastApply) parts.push("last apply: +" + lastApply.add + " ~" + lastApply.change + " -" + lastApply.destroy);
+    var runs = (window.CI && CI.hubOf(sys).ansibleRuns) || [], lr = runs[runs.length - 1];
+    if (lr) { var hs = Object.keys(lr.stats), ch = hs.reduce(function (s2, h) { return s2 + lr.stats[h].changed; }, 0), fl = hs.filter(function (h) { return lr.stats[h].failed || lr.stats[h].unreachable; }).length; parts.push("ansible: " + hs.length + " host" + (hs.length === 1 ? "" : "s") + ", changed=" + ch + (fl ? ' <span class="bad">' + fl + " failed</span>" : "") + (lr.check ? " (check)" : "")); }
+    return parts.join(" · ");
+  }
+  function iacSig(sys) { var A = iacA(sys); if (!A) return { cloud: "", hosts: "", run: "" }; var c = []; Object.keys(A.res).forEach(function (t) { Object.keys(A.res[t]).forEach(function (k) { c.push(t + k); }); }); var runs = (CI.hubOf(sys).ansibleRuns || []).length; var m = latestRun(sys); return { cloud: c.join(",") + (A.lastPlan ? "p" + A.lastPlan.t : "") + (A.events || []).filter(function (e) { return e.kind === "drift"; }).length, hosts: String(runs), run: m ? m.sys + m.num + m.result : "" }; }
+  function chip(cls, txt, title) { return '<span class="chip ' + cls + '"' + (title ? ' title="' + esc(title) + '"' : "") + ">" + txt + "</span>"; }
+  function renderCloud() {
+    var sys = state.sys, A = iacA(sys);
+    if (!A) { $("dvCloud").innerHTML = ""; return; }
+    var all = function (t) { return IAC.all(A, t); }, drift = driftIds(A), plan = A.lastPlan;
+    var h = "";
+    if (plan && plan.changes.length) h += '<div class="iac-plan"><b>Planned, not applied:</b> ' + plan.changes.map(function (c) { var s = { create: "+", update: "~", "delete": "-", replace: "-/+" }[c.action] || "?"; return '<span class="pc ' + c.action + '">' + s + " " + esc(c.addr) + "</span>"; }).join(" ") + "</div>";
+    var vpcs = all("aws_vpc");
+    vpcs.forEach(function (v) {
+      var subs = all("aws_subnet").filter(function (s2) { return s2.vpc_id === v.id; });
+      var igw = all("aws_internet_gateway").filter(function (g) { return g.vpc_id === v.id; })[0];
+      h += '<div class="iac-vpc"><div class="iac-vh"><b>VPC</b> ' + esc(tagName(v) || v.id) + ' <span class="dim">' + esc(v.cidr_block) + "</span>" + (igw ? chip("port", "⇅ internet gateway") : chip("tmp", "no internet gateway")) + (drift[v.id] ? chip("sec", "changed outside Terraform") : "") + "</div><div class=\"iac-subs\">";
+      subs.forEach(function (sn) {
+        var pub = IAC.publicRoute(A, sn.id), insts = all("aws_instance").filter(function (i) { return i.subnet_id === sn.id; });
+        h += '<div class="iac-sub ' + (pub ? "pub" : "priv") + '"><div class="iac-sh">' + (pub ? "public" : "private") + " · " + esc(sn.cidr_block) + ' <span class="dim">' + esc(sn.availability_zone || "") + "</span></div>";
+        insts.forEach(function (i) {
+          var sgs = (i.vpc_security_group_ids || []).map(function (g) { var x = IAC.find(A, "aws_security_group", function (y) { return y.id === g; }); return x ? x.name : g; });
+          var mo = i.metadata_options && i.metadata_options[0], rb = i.root_block_device && i.root_block_device[0];
+          h += '<div class="iac-inst ' + (i.instance_state === "running" ? "ok" : "idle") + '"><div class="dv-ct"><span class="st"></span><b>' + esc(tagName(i) || i.id) + '</b><span class="img">' + esc(i.instance_type) + "</span></div>" +
+            '<div class="dv-cs">' + esc(i.private_ip) + (i.public_ip ? " · " + esc(i.public_ip) : "") + "</div><div class=\"dv-chips\">" + sgs.map(function (n) { return chip("bind", "sg " + esc(n)); }).join("") +
+            (mo && mo.http_tokens === "required" ? chip("ro", "IMDSv2") : chip("sec", "IMDSv1")) + (rb && rb.encrypted ? chip("ro", "🔒 disk") : chip("sec", "disk not encrypted")) + (drift[i.id] ? chip("sec", "drift") : "") + "</div></div>";
+        });
+        h += "</div>";
+      });
+      h += "</div></div>";
+    });
+    var cards = [];
+    all("aws_s3_bucket").forEach(function (b) {
+      var enc = IAC.find(A, "aws_s3_bucket_server_side_encryption_configuration", function (x) { return x.bucket === b.bucket; }), ver = IAC.find(A, "aws_s3_bucket_versioning", function (x) { return x.bucket === b.bucket; }), pab = IAC.find(A, "aws_s3_bucket_public_access_block", function (x) { return x.bucket === b.bucket; });
+      var objs = Object.keys(b.objects || {}).length, isState = /tfstate/.test(b.bucket);
+      cards.push('<div class="iac-card"><div class="iac-ct">🪣 <b>' + esc(b.bucket) + "</b></div><div class=\"dv-chips\">" + (isState ? chip("port", "state" + (objs ? " · " + objs + " object" + (objs > 1 ? "s" : "") : "")) : "") + (ver && ver.versioning_configuration[0].status === "Enabled" ? chip("ro", "versioned") : "") + (enc ? chip("ro", enc.rule && enc.rule[0] && enc.rule[0].apply_server_side_encryption_by_default[0].sse_algorithm === "aws:kms" ? "KMS" : "SSE") : "") + (pab && pab.block_public_acls && pab.block_public_policy ? chip("ro", "public blocked") : chip("tmp", "no public block")) + (drift[b.bucket] ? chip("sec", "drift") : "") + Object.keys(b.tags || {}).slice(0, 3).map(function (k) { return chip("tmp", esc(k) + "=" + esc(b.tags[k])); }).join("") + "</div></div>");
+    });
+    all("aws_security_group").filter(function (g) { return !all("aws_instance").some(function (i) { return (i.vpc_security_group_ids || []).indexOf(g.id) >= 0; }) || true; }).forEach(function (g) {
+      var rules = (g.ingress || []).map(function (r) { var open = (r.cidr_blocks || []).indexOf("0.0.0.0/0") >= 0; return chip(open && +r.from_port === 22 ? "sec" : open ? "port" : "bind", (r.protocol === "-1" ? "all" : r.from_port + (r.to_port !== r.from_port ? "-" + r.to_port : "")) + " ← " + esc((r.cidr_blocks || []).join(",") || "sg")); }).join("");
+      IAC.all(A, "aws_vpc_security_group_ingress_rule").forEach(function (r) { if (r.security_group_id === g.id) rules += chip(r.cidr_ipv4 === "0.0.0.0/0" && +r.from_port === 22 ? "sec" : "bind", r.from_port + " ← " + esc(r.cidr_ipv4 || "sg")); });
+      cards.push('<div class="iac-card"><div class="iac-ct">🛡 <b>' + esc(g.name) + "</b></div><div class=\"dv-chips\">" + (rules || chip("tmp", "no ingress")) + (drift[g.id] ? chip("sec", "changed outside Terraform") : "") + "</div></div>");
+    });
+    all("aws_ssm_parameter").forEach(function (p) { cards.push('<div class="iac-card"><div class="iac-ct">🔑 <b>' + esc(p.name) + "</b></div><div class=\"dv-chips\">" + chip(p.type === "SecureString" ? "ro" : "sec", esc(p.type)) + chip("tmp", "v" + p.version) + "</div></div>"); });
+    all("aws_iam_role").forEach(function (r) { var att = IAC.all(A, "aws_iam_role_policy_attachment").filter(function (x) { return x.role === r.name; }).map(function (x) { return x.policy_arn.split("/").pop(); }); cards.push('<div class="iac-card"><div class="iac-ct">👤 <b>' + esc(r.name) + "</b></div><div class=\"dv-chips\">" + (/token\.actions/.test(r.assume_role_policy) ? chip("port", "GitHub OIDC") : /ec2\.amazonaws/.test(r.assume_role_policy) ? chip("port", "EC2") : "") + att.map(function (x) { return chip(/Administrator/.test(x) ? "sec" : "bind", esc(x)); }).join("") + "</div></div>"); });
+    all("aws_dynamodb_table").forEach(function (t) { var locks = Object.keys(t.items || {}).length; cards.push('<div class="iac-card"><div class="iac-ct">🗄 <b>' + esc(t.name) + "</b></div><div class=\"dv-chips\">" + (locks ? chip("sec", "🔒 " + locks + " lock") : chip("tmp", "no locks")) + "</div></div>"); });
+    all("aws_key_pair").forEach(function (k) { cards.push('<div class="iac-card"><div class="iac-ct">🗝 <b>' + esc(k.key_name) + "</b></div><div class=\"dv-chips\">" + chip("tmp", esc(k.key_type || "ed25519")) + "</div></div>"); });
+    all("aws_iam_openid_connect_provider").forEach(function (p) { cards.push('<div class="iac-card"><div class="iac-ct">🔗 <b>OIDC</b></div><div class="dv-chips">' + chip("port", esc(p.url.replace(/^https:\/\//, ""))) + "</div></div>"); });
+    if (cards.length) h += '<div class="iac-grid">' + cards.join("") + "</div>";
+    if (!h) h = '<div class="dv-empty">Nothing in the AWS account yet. Resources you create with <code>terraform apply</code> appear here: networks with their servers, buckets, security groups, roles and secrets. A planned-but-not-applied change shows at the top.</div>';
+    $("dvCloud").innerHTML = h;
+  }
+  function renderHosts() {
+    var sys = state.sys, home = CI.homeSys(sys), A = iacA(sys), runs = CI.hubOf(sys).ansibleRuns || [], last = {};
+    runs.forEach(function (r) { Object.keys(r.stats).forEach(function (h) { last[h] = { s: r.stats[h], check: r.check, pb: r.playbook }; }); });
+    var hosts = [];
+    Object.keys(IAC.SERVERS).forEach(function (n) { var m = home.net && home.net.byIp && home.net.byIp[IAC.SERVERS[n]]; hosts.push({ name: n, ip: IAC.SERVERS[n], m: m, kind: "on-prem" }); });
+    IAC.all(A, "aws_instance").forEach(function (i) { hosts.push({ name: (i.tags && i.tags.Name) || i.id, ip: i.public_ip || i.private_ip, m: A.machines[i.id], kind: "EC2", alt: i.public_ip }); });
+    // in a cloud lab, on-prem servers nobody has touched are just noise
+    if (hosts.some(function (x) { return x.kind === "EC2"; })) hosts = hosts.filter(function (x) { return x.kind === "EC2" || x.m || last[x.name]; });
+    var h = '<div class="dv-grid">' + hosts.map(function (x) {
+      var m = x.m, lr = last[x.name] || (x.alt && last[x.alt]);
+      var nginx = m && m.units && m.units["nginx.service"] && m.units["nginx.service"].rt.active === "active";
+      var ufw = m && /Status: active/.test(String((window.IAC && IAC.H) ? (IAC.H.sh(m, "ufw status").text) : ""));
+      var cls = !m ? "idle" : lr && (lr.s.failed || lr.s.unreachable) ? "bad" : "ok";
+      return '<div class="dv-card ' + cls + '"><div class="dv-ct"><span class="st"></span><b>' + esc(x.name) + '</b><span class="img">' + esc(x.kind) + '</span></div><div class="dv-cs">' + esc(x.ip) + (m ? "" : " · not contacted yet") + '</div><div class="dv-chips">' +
+        (m ? (nginx ? chip("ro", "nginx ●") : chip("tmp", "no nginx")) + (ufw ? chip("bind", "ufw on") : "") : "") +
+        (lr ? chip(lr.s.failed || lr.s.unreachable ? "sec" : "port", (lr.s.unreachable ? "unreachable" : lr.s.failed ? "failed" : "ok=" + lr.s.ok + " changed=" + lr.s.changed) + (lr.check ? " (check)" : "")) : "") + "</div></div>";
+    }).join("") + "</div>";
+    $("dvHosts").innerHTML = h;
+  }
+
   /* ---------------- hooks */
   function badge(lab) {
     var meta = document.querySelector(".ticket-head .meta");
@@ -256,21 +342,34 @@
   function onLab(src, lab, drill, fresh) {
     badge(lab);
     state.src = src; state.sys = null; state.lastIdx = -1;
-    state.ci = !!(lab && (lab.ci || lab.module === 2));
-    Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .ci-tab"), function (b) { b.hidden = !state.ci; });
+    state.mod = lab && lab.module || 1;
+    state.ci = state.mod === 2 || !!(lab && lab.ci);
+    state.iac = state.mod === 3;
+    Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .dk-tab"), function (b) { b.hidden = state.iac; });
+    Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .ci-tab"), function (b) { b.hidden = !(state.ci || (state.iac && b.getAttribute("data-v") === "pip")); });
+    Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .iac-tab"), function (b) { b.hidden = !state.iac; });
     state.sig = null;
-    $("dvCap").innerHTML = state.ci ? "CI/CD for kestrel/notes-api: pipeline runs and environments show up here." : "Docker is running on kc-dev-01. Containers, images and builds show up here as you work.";
-    show(state.ci ? "pip" : "ctr");
+    $("dvCap").innerHTML = state.iac ? "AWS account " + (window.IAC ? IAC.ACCOUNT : "") + " (eu-west-1) and the servers you manage show up here." : state.ci ? "CI/CD for kestrel/notes-api: pipeline runs and environments show up here." : "Docker is running on kc-dev-01. Containers, images and builds show up here as you work.";
+    show(state.iac ? "cloud" : state.ci ? "pip" : "ctr");
     var cfg = window.LAB_CONFIG;
     if (fresh) cfg.runner.call({ type: "run", code: "", files: src.files || {}, prelude: src.prelude || "", system: src.system, checks: [] }).then(function (res) {
       if (state.src !== src || !res || !res.sys) return;
-      state.sys = res.sys; if (state.ci) { state.sig = ciSig(res.sys); $("dvCap").innerHTML = ciCaption(res.sys); } render();
+      state.sys = res.sys; if (state.iac) { state.isig = iacSig(res.sys); $("dvCap").innerHTML = iacCaption(res.sys); } else if (state.ci) { state.sig = ciSig(res.sys); $("dvCap").innerHTML = ciCaption(res.sys); } render();
     });
   }
   function onResult(res) {
     if (!res || !res.sys) return;
     state.sys = res.sys;
     state.lastIdx = (res.count || 1) - 1;
+    if (state.iac) {
+      $("dvCap").innerHTML = iacCaption(res.sys);
+      var isg = iacSig(res.sys), oldI = state.isig || { cloud: "", hosts: "", run: "" }; state.isig = isg;
+      if (isg.cloud !== oldI.cloud && state.view !== "cloud") { var c1 = document.querySelector('.dv-tabs button[data-v="cloud"] .dot'); if (c1) c1.hidden = false; }
+      if (isg.hosts !== oldI.hosts && state.view !== "hosts") { var c2 = document.querySelector('.dv-tabs button[data-v="hosts"] .dot'); if (c2) c2.hidden = false; }
+      if (isg.run !== oldI.run && state.view !== "pip") { var c3 = document.querySelector('.dv-tabs button[data-v="pip"] .dot'); if (c3) c3.hidden = false; }
+      render();
+      return;
+    }
     if (state.ci) {
       $("dvCap").innerHTML = ciCaption(res.sys);
       var sig = ciSig(res.sys), old = state.sig || { run: "", env: "" }; state.sig = sig;

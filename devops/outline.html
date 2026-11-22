@@ -98,7 +98,7 @@
   </header>
 
   <div class="intro">
-    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">the full plan · Modules 1 and 2 are open</span></div>
+    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">the full plan · Modules 1 to 3 are open</span></div>
     <h1>DevOps: <span>from commit to production.</span></h1>
     <p>Package apps in containers, build pipelines that test, scan and ship them, describe whole environments as code, run them on Kubernetes, and know when something breaks before your users do.</p>
     <p class="note">This is the plan for the track. The labs run in the same simulated terminal as the Linux and Git tracks, on a developer laptop with Docker, with an editor panel for Dockerfiles, YAML and Terraform and a live panel showing your containers, images and builds.</p>
@@ -106,7 +106,7 @@
 
   <div class="facts">
     <div><small>Modules</small><b>5</b></div>
-    <div><small>Labs</small><b>50</b></div>
+    <div><small>Labs</small><b>51</b></div>
     <div><small>Practice drills</small><b>3 per lab</b></div>
     <div><small>Tools</small><b>~20</b></div>
   </div>
@@ -139,7 +139,7 @@
     </div>
   </section>
 
-  <footer>DevOps is the sixth track. Modules 1 and 2 are open; Modules 3 to 5 follow.</footer>
+  <footer>DevOps is the sixth track. Modules 1 to 3 are open; Modules 4 and 5 follow.</footer>
 </div>
 
 <script>
@@ -189,15 +189,16 @@
       ["212", "Commit to production", "Actions", "A full pipeline: gates, a signed image, staging, approval and a canary.", true]
     ] },
     { n: 3, title: "Infrastructure as code", goal: "Describe servers and cloud resources in files you can review, version and scan.", labs: [
-      ["301", "Terraform basics", "Terraform", "init, plan and apply."],
-      ["302", "State, locking & drift", "Terraform", "Remote state, locks, and spotting changes made by hand."],
-      ["303", "Variables, outputs & modules", "Terraform", "Reusable building blocks."],
-      ["304", "Building on AWS", "Terraform", "A VPC, an EC2 server and an S3 bucket."],
-      ["305", "Ansible basics", "Ansible", "Inventory, playbooks and idempotency."],
-      ["306", "Ansible roles & templates", "Ansible", "Configure many servers the same way."],
-      ["307", "Secrets management", "Vault", "Vault and AWS SSM instead of passwords in files."],
-      ["308", "Scanning IaC", "Checkov", "Catch public S3 buckets, 0.0.0.0/0 and missing encryption before they ship."],
-      ["309", "Kestrel's staging environment", "Terraform", "Build the whole environment from code, then prove it's secure.", true]
+      ["301", "Terraform basics", "Terraform", "Providers, init, plan and apply, references, in-place updates vs replacement."],
+      ["302", "State, locking & drift", "Terraform", "What state holds, S3 state with locking, drift, import and moved blocks."],
+      ["303", "Variables, outputs & modules", "Terraform", "Validated variables, a reusable module, for_each, refactoring without destroying anything."],
+      ["304", "Building on AWS", "Terraform", "A VPC, subnets, security groups, a hardened EC2 server with an IAM role and user_data."],
+      ["305", "Ansible basics", "Ansible", "Inventory, ad-hoc commands, playbooks, templates, handlers and idempotency."],
+      ["306", "Ansible roles & templates", "Ansible", "Roles, group_vars, loops, conditions, Jinja2 config files and tags."],
+      ["307", "Secrets management", "Vault", "Vault KV, policies and AppRole, ansible-vault, and SSM Parameter Store from Terraform."],
+      ["308", "Scanning IaC", "Checkov", "Checkov and ansible-lint: fix the real findings, suppress the rest with a reason."],
+      ["309", "Terraform in a pipeline", "Actions", "OIDC to AWS with no stored keys, plan on every PR, apply after approval."],
+      ["310", "Kestrel's staging environment", "Terraform", "Network, hardened servers, Ansible, Vault and a pipeline, all from one repository.", true]
     ] },
     { n: 4, title: "Kubernetes", goal: "Run containers at scale, keep them healthy, and lock the cluster down.", labs: [
       ["401", "Pods & kubectl", "kubectl", "Create, inspect and debug pods."],
