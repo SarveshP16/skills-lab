@@ -224,9 +224,10 @@
     }
     var cn = Dk.connect(c.host, c.c, host, u.port);
     if (cn.why === "dns") {
-      if (/\./.test(host) && !/\.internal$/.test(host)) return { status: 200, headers: { "Content-Type": "text/html" }, body: "<!doctype html>\n<title>Example</title>\n" };
+      if (/\./.test(host) && !/\.internal$/.test(host) && !cn.dnsBlocked && !/\.(cluster\.local|svc)$/.test(host)) return { status: 200, headers: { "Content-Type": "text/html" }, body: "<!doctype html>\n<title>Example</title>\n" };
       return { err: "dns", host: host };
     }
+    if (cn.why === "timeout") return { err: "timeout", host: host };
     if (!cn.ok) return { err: "refused", host: host, ip: cn.ctr ? (cn.ctr.nets[0] || {}).ip : host };
     if (!cn.app.http) return { err: "proto", host: host };
     var req = { scheme: u.scheme, host: host, port: u.port, path: u.path, method: o.method || (o.data != null ? "POST" : "GET"), headers: Object.assign({ host: host, "user-agent": o.ua || "curl/8.11.0", accept: "*/*" }, o.headers || {}), body: o.data };
@@ -250,8 +251,8 @@
     if (!url) { errl(io, "curl: try 'curl --help' or 'curl --manual' for more information"); return 2; }
     var r = fetch(sess, url, o), show = !o.s || o.S;
     if (r.err) {
-      var code = r.err === "dns" ? 6 : r.err === "refused" ? 7 : 52;
-      if (show) errl(io, "curl: (" + code + ") " + (r.err === "dns" ? "Could not resolve host: " + r.host : r.err === "refused" ? "Failed to connect to " + r.host + " port " + M2.parseUrl(url).port + " after 0 ms: Couldn't connect to server" : "Empty reply from server"));
+      var code = r.err === "dns" ? 6 : r.err === "refused" ? 7 : r.err === "timeout" ? 28 : 52;
+      if (show) errl(io, "curl: (" + code + ") " + (r.err === "dns" ? "Could not resolve host: " + r.host : r.err === "timeout" ? "Failed to connect to " + r.host + " port " + M2.parseUrl(url).port + " after 130001 ms: Couldn't connect to server" : r.err === "refused" ? "Failed to connect to " + r.host + " port " + M2.parseUrl(url).port + " after 0 ms: Couldn't connect to server" : "Empty reply from server"));
       if (o.w) out(io, o.w.replace(/%\{http_code\}/g, "000").replace(/\\n/g, "\n"));
       return code;
     }
@@ -273,7 +274,7 @@
     if (!url) { errl(io, "BusyBox v1.36.1 (2024-06-10 07:11:47 UTC) multi-call binary.\n\nUsage: wget [-cqS] [--spider] [-O FILE] [-o LOGFILE] [--header STR]\n\t[--post-data STR | --post-file FILE] [-Y on/off]\n\t[-P DIR] [-U AGENT] [-T SEC] URL..."); return 1; }
     var r = fetch(sess, url, { ua: "Wget" });
     if (!o.q) errl(io, "Connecting to " + M2.parseUrl(url).host + ":" + M2.parseUrl(url).port);
-    if (r.err) { errl(io, r.err === "dns" ? "wget: bad address '" + r.host + ":" + M2.parseUrl(url).port + "'" : r.err === "refused" ? "wget: can't connect to remote host (" + r.ip + "): Connection refused" : "wget: error getting response"); return 1; }
+    if (r.err) { errl(io, r.err === "dns" ? "wget: bad address '" + r.host + ":" + M2.parseUrl(url).port + "'" : r.err === "timeout" ? "wget: download timed out" : r.err === "refused" ? "wget: can't connect to remote host (" + r.ip + "): Connection refused" : "wget: error getting response"); return 1; }
     if (r.status >= 400) { errl(io, "wget: server returned error: HTTP/1.1 " + r.status + " " + (REASON[r.status] || "")); return 1; }
     if (o.spider) { if (!o.q) errl(io, "remote file exists"); return 0; }
     if (o.O === "-") { out(io, r.body || ""); return 0; }
@@ -284,10 +285,10 @@
   };
   CMDS.dknc = function (args, io, sess) {
     var a = args.slice(1), z = false, v = false, rest = [];
-    a.forEach(function (x) { if (/^-[zvw0-9]+$/.test(x)) { if (/z/.test(x)) z = true; if (/v/.test(x)) v = true; } else rest.push(x); });
+    for (var ai = 0; ai < a.length; ai++) { var x = a[ai]; if (x === "-w" || x === "-W") { ai++; continue; } if (/^-[zvw0-9]+$/.test(x)) { if (/z/.test(x)) z = true; if (/v/.test(x)) v = true; } else rest.push(x); }
     var c = ctx(sess); if (!c.c || rest.length < 2) return 1;
     var cn = Dk.connect(c.host, c.c, rest[0], +rest[1]);
-    if (v) errl(io, cn.ok ? rest[0] + " (" + ((cn.ctr.nets[0] || {}).ip) + ":" + rest[1] + ") open" : cn.why === "dns" ? "nc: bad address '" + rest[0] + "'" : "nc: " + rest[0] + " (" + ((cn.ctr && cn.ctr.nets[0] || {}).ip || rest[0]) + ":" + rest[1] + "): Connection refused");
+    if (v || cn.why === "timeout") errl(io, cn.ok ? rest[0] + " (" + ((cn.ctr.nets[0] || {}).ip) + ":" + rest[1] + ") open" : cn.why === "dns" ? "nc: bad address '" + rest[0] + "'" : cn.why === "timeout" ? "nc: " + rest[0] + " (" + rest[0] + ":" + rest[1] + "): Connection timed out" : "nc: " + rest[0] + " (" + ((cn.ctr && cn.ctr.nets[0] || {}).ip || rest[0]) + ":" + rest[1] + "): Connection refused");
     return cn.ok ? 0 : 1;
   };
 

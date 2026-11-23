@@ -100,6 +100,7 @@
     pk.py.forEach(function (p) { var n = Dk.pipNorm(p.name); DB.forEach(function (r) { if (r[0] === "python-pkg" && r[1] === n && affected(r, p.ver)) pyv.push({ cls: "py", lib: p.name + " (METADATA)", id: r[2], sev: r[3], status: r[5], installed: p.ver, fixed: r[4], title: r[6] }); }); });
     return { os: filt(res, o), py: filt(pyv, o) };
   }
+  Dk.trivyVulns = vulnsFor;
   function filt(list, o) {
     return list.filter(function (v) { return (!o.severity || o.severity.indexOf(v.sev) >= 0) && (!o.ignoreUnfixed || v.fixed) && !(o.ignore || {})[v.id]; })
       .sort(function (a, b) { return a.lib < b.lib ? -1 : a.lib > b.lib ? 1 : SEV.indexOf(b.sev) - SEV.indexOf(a.sev); });

@@ -1380,7 +1380,7 @@
       if (e instanceof ParseError) { termWrite(sess, e.message + "\n", true); code = 2; }
       else if (e instanceof ExitSignal) {
         code = e.code;
-        if (sess.userStack.length) { var popped = sess.userStack.pop(); termWrite(sess, popped.exitMsg || "logout\n", false); } // leave a sudo -i / su / ssh shell
+        if (sess.userStack.length) { var popped = sess.userStack.pop(); termWrite(sess, popped.exitMsg || "logout\n", false); if (popped.onExit) popped.onExit(sess); } // leave a sudo -i / su / ssh shell
         else termWrite(sess, "logout\n(This lab's terminal stays open.)\n", false);
       }
       else if (e instanceof StepLimit) { termWrite(sess, "^C\n(Stopped: the command ran too long. An endless loop?)\n", true); code = 130; }

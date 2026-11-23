@@ -402,6 +402,7 @@
     var cn = Dk.connect(sys, c, s.host, s.port);
     var ip = cn.ctr ? (cn.ctr.nets[0] || {}).ip : null;
     if (cn.why === "dns") return { error: "psycopg.OperationalError: failed to resolve host '" + s.host + "': [Errno -2] Name or service not known" };
+    if (cn.why === "timeout") return { error: "psycopg.OperationalError: connection timeout expired" };
     if (!cn.ok) return { error: "psycopg.OperationalError: connection failed: connection to server at \"" + (s.host === "localhost" ? "127.0.0.1" : ip || s.host) + "\", port " + s.port + " failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?" };
     if (!cn.app.pg) return { error: "psycopg.OperationalError: connection failed: connection to server at \"" + ip + "\", port " + s.port + " failed: received invalid response to SSL negotiation" };
     var auth = cn.app.pg.auth(sys, cn.ctr, s.user, s.password, s.name);
@@ -412,6 +413,7 @@
     if (!r) return { error: "REDIS_URL is not set" };
     var cn = Dk.connect(sys, c, r.host, r.port);
     if (cn.why === "dns") return { error: "Error -2 connecting to " + r.host + ":" + r.port + ". Name or service not known." };
+    if (cn.why === "timeout") return { error: "Timeout connecting to server" };
     if (!cn.ok) return { error: "Error 111 connecting to " + r.host + ":" + r.port + ". Connection refused." };
     if (!cn.app.redis) return { error: "Protocol error, got \"H\" as reply type byte" };
     if (cn.app.redis.pass && cn.app.redis.pass !== r.password) return { error: r.password ? "invalid username-password pair or user is disabled." : "Authentication required." };

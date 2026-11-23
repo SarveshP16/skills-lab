@@ -897,6 +897,7 @@
       var site = c.info && SITES[c.info.site];
       if (!site) return { err: { code: req.port === 5432 || req.port === 22 ? 1 : 52, msg: req.port === 5432 || req.port === 22 ? "Received HTTP/0.9 when not allowed" : "Empty reply from server" }, ip: ip };
       r = site(req, sys);
+      if (r && r.err) return Object.assign({}, r, { ip: ip });
       r.headers = Object.assign({ Date: httpDate(sys.now) }, r.headers);
       if (!r.headers["Content-Length"]) r.headers["Content-Length"] = String(bytes(r.body));
     }
@@ -946,7 +947,7 @@
     var stdoutTty = !!io.tty && !o.o && !o.O;
     var verbose = function (t) { if (o.v) errl(io, t); };
     for (;;) {
-      var req = { scheme: cur.scheme, host: cur.host, port: cur.port, path: cur.path, method: method, headers: Object.assign({ host: hostHdr, "user-agent": "curl/8.5.0", accept: "*/*" }, o.headers), body: o.data };
+      var req = { scheme: cur.scheme, host: cur.host, port: cur.port, path: cur.path, method: method, headers: Object.assign({ host: hostHdr, "user-agent": "curl/8.5.0", accept: "*/*" }, o.headers), body: o.data, insecure: !!o.k };
       if (o.resolve && o.resolve.host === cur.host && o.resolve.port === cur.port) req.resolveTo = o.resolve.ip;
       verbose("*   Trying " + (req.resolveTo || resolve(sys, cur.host) || cur.host) + ":" + cur.port + "...");
       res = httpRequest(sys, req);

@@ -98,7 +98,7 @@
   </header>
 
   <div class="intro">
-    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">the full plan · Modules 1 to 3 are open</span></div>
+    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">the full plan · Modules 1 to 4 are open</span></div>
     <h1>DevOps: <span>from commit to production.</span></h1>
     <p>Package apps in containers, build pipelines that test, scan and ship them, describe whole environments as code, run them on Kubernetes, and know when something breaks before your users do.</p>
     <p class="note">This is the plan for the track. The labs run in the same simulated terminal as the Linux and Git tracks, on a developer laptop with Docker, with an editor panel for Dockerfiles, YAML and Terraform and a live panel showing your containers, images and builds.</p>
@@ -106,7 +106,7 @@
 
   <div class="facts">
     <div><small>Modules</small><b>5</b></div>
-    <div><small>Labs</small><b>51</b></div>
+    <div><small>Labs</small><b>52</b></div>
     <div><small>Practice drills</small><b>3 per lab</b></div>
     <div><small>Tools</small><b>~20</b></div>
   </div>
@@ -139,7 +139,7 @@
     </div>
   </section>
 
-  <footer>DevOps is the sixth track. Modules 1 to 3 are open; Modules 4 and 5 follow.</footer>
+  <footer>DevOps is the sixth track. Modules 1 to 4 are open; Module 5 follows.</footer>
 </div>
 
 <script>
@@ -201,17 +201,18 @@
       ["310", "Kestrel's staging environment", "Terraform", "Network, hardened servers, Ansible, Vault and a pipeline, all from one repository.", true]
     ] },
     { n: 4, title: "Kubernetes", goal: "Run containers at scale, keep them healthy, and lock the cluster down.", labs: [
-      ["401", "Pods & kubectl", "kubectl", "Create, inspect and debug pods."],
-      ["402", "Deployments", "kubectl", "Scaling, rolling updates and rollback."],
-      ["403", "Services & Ingress", "kubectl", "ClusterIP, NodePort, LoadBalancer, and routing web traffic."],
-      ["404", "ConfigMaps & Secrets", "kubectl", "Configuration outside the image."],
-      ["405", "Health checks & resources", "kubectl", "Liveness and readiness probes, requests and limits."],
-      ["406", "Storage", "kubectl", "Persistent volumes and claims."],
-      ["407", "Helm charts", "Helm", "Package and upgrade an app with one command."],
-      ["408", "NetworkPolicy", "kubectl", "Decide which pods may talk to which."],
-      ["409", "RBAC & pod security", "kubectl", "Least-privilege access, non-root pods, read-only filesystems."],
-      ["410", "GitOps with Argo CD", "Argo CD", "The cluster follows what's in Git."],
-      ["411", "Deploy Kestrel to the cluster", "kubectl", "Ship the whole app to Kubernetes, secured.", true]
+      ["401", "Pods & kubectl", "kubectl", "Contexts and namespaces, get/describe/logs/exec, debugging CrashLoopBackOff, ImagePullBackOff and Pending."],
+      ["402", "Deployments", "kubectl", "ReplicaSets, scaling, zero-downtime rolling updates, rollout history and undo, Jobs and CronJobs."],
+      ["403", "Services & Ingress", "kubectl", "Endpoints and selectors, cluster DNS, NodePort, LoadBalancer, Ingress with TLS from cert-manager."],
+      ["404", "ConfigMaps & Secrets", "kubectl", "Configuration outside the image, Secrets as read-only files, why base64 isn't encryption."],
+      ["405", "Health checks & resources", "kubectl", "Liveness, readiness and startup probes, requests and limits, OOMKilled, autoscaling under load."],
+      ["406", "Storage", "kubectl", "PersistentVolumeClaims and StorageClasses, a PostgreSQL StatefulSet that keeps its data."],
+      ["407", "Helm & Kustomize", "Helm", "Install, upgrade and roll back a chart; Kustomize overlays and ConfigMap generators."],
+      ["408", "NetworkPolicy", "kubectl", "Default deny, then allow exactly the paths the app needs, egress and DNS included."],
+      ["409", "RBAC & pod security", "kubectl", "ServiceAccounts and Roles, can-i, short-lived tokens, the restricted Pod Security Standard."],
+      ["410", "Admission policies & supply chain", "Kyverno", "No :latest, required limits, allowed registries, only signed images, trivy k8s."],
+      ["411", "GitOps with Argo CD", "Argo CD", "The cluster follows Git: auto-sync, self-heal, prune, production by pull request."],
+      ["412", "Ship Kestrel's shop to the cluster", "Argo CD", "The whole shop on Kubernetes from Git: secured, autoscaled, locked down, signed, HTTPS.", true]
     ] },
     { n: 5, title: "Observability & reliability", goal: "See what's happening inside your systems, get alerted at the right time, and handle incidents calmly.", labs: [
       ["501", "Metrics with Prometheus", "Prometheus", "Scrape metrics and query them with PromQL."],

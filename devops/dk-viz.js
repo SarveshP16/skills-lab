@@ -15,9 +15,9 @@
     var work = document.querySelector(".work"), cons = document.querySelector(".console");
     var el = document.createElement("section");
     el.className = "dkviz"; el.id = "dkviz"; el.setAttribute("aria-label", "Docker on this laptop");
-    el.innerHTML = '<div class="dv-head"><div class="dv-tabs" role="tablist"><button role="tab" data-v="ctr" aria-selected="true" class="dk-tab">Containers</button><button role="tab" data-v="img" aria-selected="false" class="dk-tab">Images</button><button role="tab" data-v="bld" aria-selected="false" class="dk-tab">Build<span class="dot" hidden></span></button><button role="tab" data-v="cloud" aria-selected="false" class="iac-tab" hidden>Cloud<span class="dot" hidden></span></button><button role="tab" data-v="hosts" aria-selected="false" class="iac-tab" hidden>Hosts<span class="dot" hidden></span></button><button role="tab" data-v="pip" aria-selected="false" class="ci-tab" hidden>Pipeline<span class="dot" hidden></span></button><button role="tab" data-v="env" aria-selected="false" class="ci-tab" hidden>Environments<span class="dot" hidden></span></button></div>' +
+    el.innerHTML = '<div class="dv-head"><div class="dv-tabs" role="tablist"><button role="tab" data-v="ctr" aria-selected="true" class="dk-tab">Containers</button><button role="tab" data-v="img" aria-selected="false" class="dk-tab">Images</button><button role="tab" data-v="bld" aria-selected="false" class="dk-tab">Build<span class="dot" hidden></span></button><button role="tab" data-v="k8c" aria-selected="false" class="k8-tab" hidden>Cluster<span class="dot" hidden></span></button><button role="tab" data-v="k8w" aria-selected="false" class="k8-tab" hidden>Workloads<span class="dot" hidden></span></button><button role="tab" data-v="k8t" aria-selected="false" class="k8-tab" hidden>Traffic<span class="dot" hidden></span></button><button role="tab" data-v="cloud" aria-selected="false" class="iac-tab" hidden>Cloud<span class="dot" hidden></span></button><button role="tab" data-v="hosts" aria-selected="false" class="iac-tab" hidden>Hosts<span class="dot" hidden></span></button><button role="tab" data-v="pip" aria-selected="false" class="ci-tab" hidden>Pipeline<span class="dot" hidden></span></button><button role="tab" data-v="env" aria-selected="false" class="ci-tab" hidden>Environments<span class="dot" hidden></span></button></div>' +
       '<span class="dv-cap" id="dvCap"></span><button class="dv-toggle" type="button" id="dvToggle" title="Hide or show the Docker panel">hide</button></div>' +
-      '<div class="dv-body"><div class="dv-view" id="dvCtr"></div><div class="dv-view" id="dvImg" hidden></div><div class="dv-view" id="dvBld" hidden></div><div class="dv-view" id="dvPip" hidden></div><div class="dv-view" id="dvEnv" hidden></div><div class="dv-view" id="dvCloud" hidden></div><div class="dv-view" id="dvHosts" hidden></div></div>';
+      '<div class="dv-body"><div class="dv-view" id="dvCtr"></div><div class="dv-view" id="dvImg" hidden></div><div class="dv-view" id="dvBld" hidden></div><div class="dv-view" id="dvPip" hidden></div><div class="dv-view" id="dvEnv" hidden></div><div class="dv-view" id="dvCloud" hidden></div><div class="dv-view" id="dvHosts" hidden></div><div class="dv-view" id="dvK8c" hidden></div><div class="dv-view" id="dvK8w" hidden></div><div class="dv-view" id="dvK8t" hidden></div></div>';
     work.insertBefore(el, cons);
     document.body.classList.add("dk-mode");
     var collapsed = false; try { collapsed = localStorage.getItem(KEY) === "hidden"; } catch (e) { /* storage blocked */ }
@@ -33,7 +33,7 @@
   function show(v) {
     state.view = v;
     Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs button"), function (b) { b.setAttribute("aria-selected", b.getAttribute("data-v") === v ? "true" : "false"); });
-    $("dvCtr").hidden = v !== "ctr"; $("dvImg").hidden = v !== "img"; $("dvBld").hidden = v !== "bld"; $("dvPip").hidden = v !== "pip"; $("dvEnv").hidden = v !== "env"; $("dvCloud").hidden = v !== "cloud"; $("dvHosts").hidden = v !== "hosts";
+    $("dvCtr").hidden = v !== "ctr"; $("dvImg").hidden = v !== "img"; $("dvBld").hidden = v !== "bld"; $("dvPip").hidden = v !== "pip"; $("dvEnv").hidden = v !== "env"; $("dvCloud").hidden = v !== "cloud"; $("dvHosts").hidden = v !== "hosts"; $("dvK8c").hidden = v !== "k8c"; $("dvK8w").hidden = v !== "k8w"; $("dvK8t").hidden = v !== "k8t";
     var tb = document.querySelector('.dv-tabs button[data-v="' + v + '"] .dot'); if (tb) tb.hidden = true;
     render();
   }
@@ -138,6 +138,7 @@
 
   function render() {
     if (!state.sys || document.getElementById("dkviz").classList.contains("collapsed")) return;
+    if (state.k8s && /^k8/.test(state.view) && window.K8sViz) { var vw = { k8c: ["dvK8c", "cluster"], k8w: ["dvK8w", "workloads"], k8t: ["dvK8t", "traffic"] }[state.view]; $(vw[0]).innerHTML = K8sViz[vw[1]](state.sys); return; }
     if (state.view === "ctr") renderCtr(); else if (state.view === "img") renderImg(); else if (state.view === "pip") renderPip(); else if (state.view === "env") renderEnv(); else if (state.view === "cloud") renderCloud(); else if (state.view === "hosts") renderHosts(); else renderBld();
   }
   function caption(sys, idx) {
@@ -345,22 +346,32 @@
     state.mod = lab && lab.module || 1;
     state.ci = state.mod === 2 || !!(lab && lab.ci);
     state.iac = state.mod === 3;
-    Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .dk-tab"), function (b) { b.hidden = state.iac; });
+    state.k8s = state.mod === 4;
+    var rp = document.getElementById("repl"); if (rp) rp.placeholder = "type a command, e.g. " + ({ 1: "docker ps", 2: "gh run list", 3: "terraform plan", 4: "kubectl get pods" }[state.mod] || "docker ps");
+    Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .dk-tab"), function (b) { b.hidden = state.iac || state.k8s; });
+    Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .k8-tab"), function (b) { b.hidden = !state.k8s; });
     Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .ci-tab"), function (b) { b.hidden = !(state.ci || (state.iac && b.getAttribute("data-v") === "pip")); });
     Array.prototype.forEach.call(document.querySelectorAll(".dv-tabs .iac-tab"), function (b) { b.hidden = !state.iac; });
     state.sig = null;
-    $("dvCap").innerHTML = state.iac ? "AWS account " + (window.IAC ? IAC.ACCOUNT : "") + " (eu-west-1) and the servers you manage show up here." : state.ci ? "CI/CD for kestrel/notes-api: pipeline runs and environments show up here." : "Docker is running on kc-dev-01. Containers, images and builds show up here as you work.";
-    show(state.iac ? "cloud" : state.ci ? "pip" : "ctr");
+    $("dvCap").innerHTML = state.k8s ? "The kestrel-staging cluster: nodes, pods, workloads and traffic show up here as you work." : state.iac ? "AWS account " + (window.IAC ? IAC.ACCOUNT : "") + " (eu-west-1) and the servers you manage show up here." : state.ci ? "CI/CD for kestrel/notes-api: pipeline runs and environments show up here." : "Docker is running on kc-dev-01. Containers, images and builds show up here as you work.";
+    show(state.k8s ? "k8c" : state.iac ? "cloud" : state.ci ? "pip" : "ctr");
     var cfg = window.LAB_CONFIG;
     if (fresh) cfg.runner.call({ type: "run", code: "", files: src.files || {}, prelude: src.prelude || "", system: src.system, checks: [] }).then(function (res) {
       if (state.src !== src || !res || !res.sys) return;
-      state.sys = res.sys; if (state.iac) { state.isig = iacSig(res.sys); $("dvCap").innerHTML = iacCaption(res.sys); } else if (state.ci) { state.sig = ciSig(res.sys); $("dvCap").innerHTML = ciCaption(res.sys); } render();
+      state.sys = res.sys; if (state.k8s && window.K8sViz) { state.ksig = K8sViz.sig(res.sys); $("dvCap").innerHTML = K8sViz.caption(res.sys); } else if (state.iac) { state.isig = iacSig(res.sys); $("dvCap").innerHTML = iacCaption(res.sys); } else if (state.ci) { state.sig = ciSig(res.sys); $("dvCap").innerHTML = ciCaption(res.sys); } render();
     });
   }
   function onResult(res) {
     if (!res || !res.sys) return;
     state.sys = res.sys;
     state.lastIdx = (res.count || 1) - 1;
+    if (state.k8s && window.K8sViz) {
+      $("dvCap").innerHTML = K8sViz.caption(res.sys, state.lastIdx);
+      var ks = K8sViz.sig(res.sys), ok0 = state.ksig || { cl: "", wl: "", tr: "" }; state.ksig = ks;
+      [["cl", "k8c"], ["wl", "k8w"], ["tr", "k8t"]].forEach(function (x) { if (ks[x[0]] !== ok0[x[0]] && state.view !== x[1]) { var d0 = document.querySelector('.dv-tabs button[data-v="' + x[1] + '"] .dot'); if (d0) d0.hidden = false; } });
+      render();
+      return;
+    }
     if (state.iac) {
       $("dvCap").innerHTML = iacCaption(res.sys);
       var isg = iacSig(res.sys), oldI = state.isig || { cloud: "", hosts: "", run: "" }; state.isig = isg;
