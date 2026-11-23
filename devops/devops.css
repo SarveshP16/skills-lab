@@ -191,3 +191,48 @@
 .k8-route .arr { color: var(--muted); }
 .k8-pols { margin-top: 8px; }
 .k8-np { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font: 500 11.5px var(--font-mono); color: var(--text-2); margin-bottom: 4px; }
+
+/* Module 5: observability */
+.ob-tab[hidden] { display: none; }
+.ob-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.ob-card { border: 1px solid var(--line-2); border-left: 3px solid var(--green); border-radius: 8px; padding: 5px 8px 6px; background: var(--panel); min-width: 0; }
+.ob-card.warn { border-left-color: var(--amber); }
+.ob-card.bad { border-left-color: var(--red); background: linear-gradient(var(--red-bg), var(--red-bg)), var(--panel); }
+.ob-ch { font: 600 11.5px var(--font-mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
+.ob-ch .dim { color: var(--muted); font-weight: 500; }
+.ob-row { display: flex; align-items: center; gap: 6px; font: 500 10.5px var(--font-mono); color: var(--muted); min-width: 0; }
+.ob-k { width: 26px; flex: none; }
+.ob-spark { flex: 1; min-width: 40px; height: 24px; }
+.ob-spark path { fill: none; stroke: var(--dv); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.ob-spark.err path { stroke: var(--red); }
+.ob-spark.lat path { stroke: var(--amber); }
+.ob-spark.mem path { stroke: var(--blue); }
+.ob-val { color: var(--text-2); white-space: nowrap; min-width: 52px; text-align: right; }
+.ob-nodata { color: var(--dim); flex: 1; }
+.ob-tg { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.ob-logs { font: 500 11px/1.45 var(--font-mono); display: flex; flex-direction: column; gap: 1px; }
+.ob-ll { display: flex; gap: 8px; padding: 1px 4px; border-radius: 4px; min-width: 0; color: var(--text-2); }
+.ob-ll.bad { background: var(--red-bg); color: var(--text); }
+.ob-ll.warn .ob-lx { color: var(--amber); }
+.ob-lt { color: var(--muted); flex: none; font: 500 11px var(--font-mono); }
+.ob-lb { color: var(--cyan); flex: none; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob-lx { overflow-wrap: anywhere; min-width: 0; }
+.ob-tr { border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); padding: 4px 8px; margin-bottom: 6px; }
+.ob-tr summary { cursor: pointer; font: 600 11.5px var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.ob-tr summary .dim { color: var(--muted); font-weight: 500; }
+.ob-tr summary .bad { color: var(--red); }
+.ob-sp { display: flex; align-items: center; gap: 6px; font: 500 10.5px var(--font-mono); color: var(--text-2); margin-top: 3px; min-width: 0; }
+.ob-sn { width: 34%; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ob-sb { flex: 1; position: relative; height: 9px; background: var(--line-2); border-radius: 3px; min-width: 40px; }
+.ob-sb span { position: absolute; top: 0; bottom: 0; background: var(--dv); border-radius: 3px; }
+.ob-sb span.warn { background: var(--amber); }
+.ob-sb span.bad { background: var(--red); }
+.ob-sd { width: 50px; flex: none; text-align: right; color: var(--muted); }
+.ob-al { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.ob-a { font: 500 11.5px var(--font-mono); color: var(--text-2); padding: 5px 8px; border: 1px solid var(--line-2); border-left: 3px solid var(--dim); border-radius: 7px; background: var(--panel); overflow-wrap: anywhere; }
+.ob-a.bad { border-left-color: var(--red); } .ob-a.warn { border-left-color: var(--amber); } .ob-a.idle { opacity: 0.75; }
+.ob-a b, .ob-inc b { color: var(--text); }
+.ob-a .dim, .ob-inc .dim, .ob-n .dim { color: var(--muted); font-size: 10.5px; }
+.ob-n { font: 500 11px var(--font-mono); color: var(--text-2); overflow-wrap: anywhere; }
+.ob-inc { font: 500 11.5px var(--font-mono); color: var(--text-2); padding: 5px 8px; border: 1px solid var(--dv-line); border-radius: 7px; background: var(--dv-bg); margin-bottom: 6px; overflow-wrap: anywhere; }
+.ob-none { font: 500 11px var(--font-mono); margin-bottom: 8px; }

@@ -695,6 +695,8 @@
     if (label["kestrel.sim/memory-mb"]) appMem = +label["kestrel.sim/memory-mb"] * MB;
     dc.k8sMem = appMem;
     if (dc.mem && appMem > dc.mem && dc.state === "running") dc.k8sOomAt = t + 2;
+    // a leak: resident memory grows by N MiB a minute until the limit kills it
+    if (label["kestrel.sim/leak-mb-per-min"]) { dc.k8sLeak = +label["kestrel.sim/leak-mb-per-min"]; dc.k8sLeakStart = t; dc.k8sMemBase = appMem; if (dc.mem && dc.k8sOomAt == null) dc.k8sOomAt = t + Math.max(30, Math.round((dc.mem - appMem) / MB / dc.k8sLeak * 60)); }
     void init;
   }
   function stopped(cl, p, c, x, code, reason) {
@@ -971,9 +973,12 @@
     keys(cl.load).forEach(function (k) { var L = cl.load[k]; if (!L.active) return; var svc = K.get(cl, "Service", L.ns, L.svc); if (!svc || !K.matches(svc.spec.selector, p.metadata.labels) || !K.podReady(p)) return; var n = K.endpointsOf(cl, svc).length || 1; base += Math.round(L.mcpu / n); });
     return base;
   };
-  K.podMem = function (cl, p) {
+  // a leaking container's memory at time t (k8sLeakPrev: start times of earlier runs, for history before this one)
+  function leakMem(cl, c, t) { var st = c.k8sLeakStart; if (t < st && c.k8sLeakPrev) c.k8sLeakPrev.forEach(function (x) { if (x <= t) st = x; }); return Math.min(c.mem || 1e15, c.k8sMemBase + c.k8sLeak * MB * Math.max(0, t - st) / 60); }
+  K.leakMem = leakMem;
+  K.podMem = function (cl, p, at) {
     if ((p._rt || {}).virtual) return (18 + parseInt(K.hex("mem" + p.metadata.name, 2), 16) % 40) * MB;
-    var m = 0; keys((p._rt || {}).ctrs || {}).forEach(function (n) { var c = p._rt.ctrs[n].c; if (c && c.state === "running") m += c.k8sMem || (c.app && c.app.mem) || 4 * MB; });
+    var m = 0; keys((p._rt || {}).ctrs || {}).forEach(function (n) { var c = p._rt.ctrs[n].c; if (c && c.state === "running") m += c.k8sLeak ? leakMem(cl, c, at == null ? K.t(cl) : at) : c.k8sMem || (c.app && c.app.mem) || 4 * MB; });
     return m;
   };
   function hpaCtl(cl, h) {

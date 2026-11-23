@@ -98,7 +98,7 @@
   </header>
 
   <div class="intro">
-    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">the full plan · Modules 1 to 4 are open</span></div>
+    <div class="kicker"><span class="pill c">track 06</span><span class="pill amber">the full plan · all 5 modules are open</span></div>
     <h1>DevOps: <span>from commit to production.</span></h1>
     <p>Package apps in containers, build pipelines that test, scan and ship them, describe whole environments as code, run them on Kubernetes, and know when something breaks before your users do.</p>
     <p class="note">This is the plan for the track. The labs run in the same simulated terminal as the Linux and Git tracks, on a developer laptop with Docker, with an editor panel for Dockerfiles, YAML and Terraform and a live panel showing your containers, images and builds.</p>
@@ -106,7 +106,7 @@
 
   <div class="facts">
     <div><small>Modules</small><b>5</b></div>
-    <div><small>Labs</small><b>52</b></div>
+    <div><small>Labs</small><b>53</b></div>
     <div><small>Practice drills</small><b>3 per lab</b></div>
     <div><small>Tools</small><b>~20</b></div>
   </div>
@@ -139,7 +139,7 @@
     </div>
   </section>
 
-  <footer>DevOps is the sixth track. Modules 1 to 4 are open; Module 5 follows.</footer>
+  <footer>DevOps is the sixth track. All five modules are open.</footer>
 </div>
 
 <script>
@@ -215,14 +215,15 @@
       ["412", "Ship Kestrel's shop to the cluster", "Argo CD", "The whole shop on Kubernetes from Git: secured, autoscaled, locked down, signed, HTTPS.", true]
     ] },
     { n: 5, title: "Observability & reliability", goal: "See what's happening inside your systems, get alerted at the right time, and handle incidents calmly.", labs: [
-      ["501", "Metrics with Prometheus", "Prometheus", "Scrape metrics and query them with PromQL."],
-      ["502", "Dashboards", "Grafana", "Build a dashboard people actually use."],
-      ["503", "Logs at scale", "Loki", "Structured logs, searching across many servers."],
-      ["504", "Tracing", "OpenTelemetry", "Follow one request through many services."],
-      ["505", "Alerts & SLOs", "Alertmanager", "Error budgets, and alerts that don't cry wolf."],
-      ["506", "Incident response", "runbooks", "Runbooks, on-call, and blameless postmortems."],
-      ["507", "Security monitoring", "Falco", "Audit logs, and spotting attacks while they happen."],
-      ["508", "The 3 a.m. outage", "all", "Find and fix an outage with metrics, logs and traces.", true]
+      ["501", "Metrics with Prometheus", "Prometheus", "ServiceMonitors and scrape targets, PromQL rates, error ratios and percentiles, recording rules."],
+      ["502", "Monitoring Kubernetes", "PromQL", "kube-state-metrics, cAdvisor and node-exporter: restarts, OOMKills, memory against limits, disks filling up."],
+      ["503", "Dashboards as code", "Grafana", "Dashboard JSON, template variables, Grafana's API, provisioning from ConfigMaps."],
+      ["504", "Logs at scale", "Loki", "LogQL across every pod, metrics from logs, structured JSON logs, correlating with metrics."],
+      ["505", "Tracing", "OpenTelemetry", "Turn on tracing, search Tempo with TraceQL, find the slow hop in a request."],
+      ["506", "Alerts & SLOs", "Alertmanager", "SLIs and error budgets, burn-rate alerts, routing, grouping and inhibition, a game day."],
+      ["507", "Incident response", "on-call", "Acknowledge, declare, follow the runbook, update the status page, write a blameless postmortem."],
+      ["508", "Security monitoring", "Falco", "Runtime detections, audit logs in Loki, containing a leaked credential, a custom rule."],
+      ["509", "The 3 a.m. outage", "everything", "Run a real incident: find the cause with metrics and logs, roll back with GitOps, silence properly, alert earlier.", true]
     ] }
   ];
   document.getElementById("mods").innerHTML = MODS.map(function (m) {

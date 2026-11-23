@@ -627,6 +627,7 @@
   function ctrNameQuiet(p, o) { return o.container || p.spec.containers[0].name; }
   function emitLogs(cl, p, cn, o, io, prefix) {
     var r = p._rt || {}, x = (r.ctrs || {})[cn], st = (p.status.containerStatuses || []).concat(p.status.initContainerStatuses || []).filter(function (s) { return s.name === cn; })[0];
+    if (r.virtual && K.virtualLogs) { var vl = K.virtualLogs(cl, p); if (vl) { var tl = o.tail != null ? +o.tail : -1; out(io, (tl >= 0 ? vl.slice(Math.max(0, vl.length - tl)) : vl).join("\n") + (vl.length ? "\n" : "")); return 0; } }
     if (r.virtual) { var base = p.metadata.name.replace(/-[a-z0-9]{8,10}-[a-z0-9]{5}$/, ""); out(io, (VIRTUAL_LOGS[base] || "") + (VIRTUAL_LOGS[base] ? "\n" : "")); return 0; }
     var lines;
     if (o.previous) {

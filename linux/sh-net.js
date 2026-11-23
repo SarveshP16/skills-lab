@@ -919,6 +919,8 @@
       if (/^--/.test(x)) {
         if (x === "--silent") o.s = true; else if (x === "--show-error") o.S = true; else if (x === "--head") o.I = true; else if (x === "--include") o.i = true; else if (x === "--verbose") o.v = true; else if (x === "--fail") o.f = true; else if (x === "--location") o.L = true; else if (x === "--insecure") o.k = true; else if (x === "--remote-name") o.O = true;
         else if (x === "--output") o.o = a[++i]; else if (x === "--header") { m = /^([^:]+):\s*(.*)$/.exec(a[++i] || ""); if (m) o.headers[m[1].toLowerCase()] = m[2]; } else if (x === "--request") o.method = a[++i]; else if (x === "--data" || x === "--data-raw") { o.data = a[++i]; } else if (x === "--write-out") wfmt = a[++i]; else if (x === "--user-agent") o.headers["user-agent"] = a[++i];
+        else if (x === "--data-urlencode") { var du = a[++i] || "", eq = du.indexOf("="); (o.urlenc = o.urlenc || []).push(eq > 0 ? du.slice(0, eq) + "=" + encodeURIComponent(du.slice(eq + 1)) : encodeURIComponent(du.replace(/^=/, ""))); }
+        else if (x === "--get") o.G = true;
         else if (x === "--resolve") { var rv = (a[++i] || "").split(":"); o.resolve = { host: rv[0], port: +rv[1], ip: rv[2] }; } else if (x === "--max-time" || x === "--connect-timeout" || x === "--retry" || x === "--user") i++; else if (x === "--compressed" || x === "--http1.1" || x === "--no-progress-meter") { if (x === "--no-progress-meter") o.noProgress = true; }
         else if (x === "--help") { out(io, "Usage: curl [options...] <url>\n -d, --data <data>          HTTP POST data\n -f, --fail                 Fail fast with no output on HTTP errors\n -H, --header <header/@file> Pass custom header(s) to server\n -i, --include              Include protocol response headers in the output\n -I, --head                 Show document info only\n -L, --location             Follow redirects\n -o, --output <file>        Write to file instead of stdout\n -O, --remote-name          Write output to a file named as the remote file\n -s, --silent               Silent mode\n -v, --verbose              Make the operation more talkative\n -w, --write-out <format>   Use output FORMAT after completion\n"); return 0; }
         else { errl(io, "curl: option " + x + ": is unknown\ncurl: try 'curl --help' or 'curl --manual' for more information"); return 2; }
@@ -927,7 +929,7 @@
       if (/^-[a-zA-Z]+$/.test(x)) {
         for (var k = 1; k < x.length; k++) {
           var c = x.charAt(k);
-          if ("sSIivfLkO".indexOf(c) >= 0) o[c] = true;
+          if ("sSIivfLkOG".indexOf(c) >= 0) o[c] = true;
           else if ("oHXdwAmu".indexOf(c) >= 0) {
             var val = x.slice(k + 1) || a[++i];
             if (c === "o") o.o = val; else if (c === "H") { m = /^([^:]+):\s*(.*)$/.exec(val || ""); if (m) o.headers[m[1].toLowerCase()] = m[2]; } else if (c === "X") o.method = val; else if (c === "d") o.data = val; else if (c === "w") wfmt = val; else if (c === "A") o.headers["user-agent"] = val;
@@ -939,6 +941,8 @@
       url = x;
     }
     if (!url) { errl(io, "curl: try 'curl --help' or 'curl --manual' for more information"); return 2; }
+    if (o.urlenc) { var enc = o.urlenc.join("&"); o.data = o.data !== undefined ? o.data + "&" + enc : enc; }
+    if (o.G && o.data !== undefined) { url += (url.indexOf("?") >= 0 ? "&" : "?") + o.data; o.data = undefined; }
     var u = parseUrl(url);
     if (!u) { errl(io, "curl: (3) URL rejected: Malformed input to a URL function"); return 3; }
     var method = o.method || (o.I ? "HEAD" : o.data !== undefined ? "POST" : "GET");
